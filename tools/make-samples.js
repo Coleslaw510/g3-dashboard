@@ -4,8 +4,10 @@ const root = path.join(__dirname, '..'), src = path.join(root, 'src');
 const ctx = { console, Date, Math, JSON, Uint8Array, ArrayBuffer }; ctx.window = ctx; vm.createContext(ctx);
 ['vendor/xlsx.full.min.js', 'data.js', 'loaders.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(src, f), 'utf8'), ctx, { filename: f }));
 const XLSX = ctx.XLSX, out = path.join(root, 'samples'); fs.mkdirSync(out, { recursive: true });
-ctx.G3.makeTestFiles().forEach(f => {
+const write = (f, dir) => {
   const wb = XLSX.utils.book_new();
   f.sheets.forEach(s => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name.slice(0, 31)));
-  fs.writeFileSync(path.join(out, f.name), Buffer.from(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))); console.log('wrote samples/' + f.name, f.sheets.map(s => s.name + ':' + s.aoa.length).join(' '));
-});
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, f.name), Buffer.from(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))); console.log('wrote ' + path.relative(root, path.join(dir, f.name)), f.sheets.map(s => s.name + ':' + s.aoa.length).join(' '));
+};
+ctx.G3.makeTestFiles().forEach(f => write(f, out));
+ctx.G3.makeMessyFiles().forEach(f => write(f, path.join(out, 'realistic')));

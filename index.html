@@ -435,6 +435,7 @@ td .warn,.loadreport .warn{color:#b45309}
 td.cic{white-space:nowrap}
 .kpi.hid .val{color:#94a3b8}
 .detgrid div{min-width:0}.detgrid b{overflow-wrap:anywhere}
+.dmoney b{font-weight:700}
 
 </style>
 </head>
@@ -509,7 +510,9 @@ td.cic{white-space:nowrap}
         <li><strong>TDP</strong>: execution = commitments + obligations + disbursements. <strong>AFP</strong> and <strong>Allotment</strong>: execution = obligations + disbursements. Balance = funding level &minus; execution.</li>
         <li>Obligations and disbursements come from the Status of Funds export (same rules as the Aviation dashboard: signs flipped, obligation = total expenditure &minus; disbursement, ALLOBJ rows dropped). Commitments come from the commitments report (Entry Type &ldquo;commitment&rdquo;, sign flipped). They are upcoming spending with no date yet, so charts show them in a separate &ldquo;Upcoming&rdquo; column, not in a month; they still count in TDP execution and balance.</li>
         <li>Commitments report rows with Entry Type &ldquo;obligation&rdquo; are used <strong>only</strong> for spending by DPC (Status of Funds DPC table and the TDC/DPC breakouts). They never add to execution or balance, since the export already counts obligations.</li>
-        <li>Pace (TDP only) compares % executed with % of the fiscal year elapsed; within &plusmn;5 points is on pace.</li>
+        <li>Pace compares current execution (obligations + disbursements only, never commitments, which can be months out) with % of the fiscal year elapsed; within &plusmn;5 points is on pace. % executed in TDP view still includes commitments.</li>
+        <li>Spending is tied to an <strong>account</strong> first (export Functional Area &rarr; Accounts tab); pay group is only an extra filter and never drops a row. Under All every row counts. Headers like FA / Func Area / Fiscal Period / Total Expenditure, amounts as text ($, commas, parentheses, trailing minus), title rows above the headers and case/space differences are all handled. Data details shows, for every dataset, the $ loaded and the $ that didn&rsquo;t map. Funding rows without a fiscal year use the export&rsquo;s fiscal year.</li>
+        <li>Spending by DPC shows commitment and obligation rows as positive amounts. Unliquidated lists by DPC, commitment item and pay group (no account column).</li>
         <li>Spend Plans and program tabs count actual spend as obligations + disbursements by fiscal month. The current month&rsquo;s plan is prorated to the as-of date. Multiple prioritizations on one account are added together.</li>
         <li>Unliquidated (FMZ3): open = Amount Open, days open = as-of date &minus; Posting Date; zero-open lines are left out. Over 90 days is amber, over 180 red.</li>
         <li><strong>Pay group</strong> = the first 5 characters of the Functional Area when all 5 are digits (100101B3PRAT &rarr; 10010). Functional Areas like 131G48ASDF are another appropriation: no pay group, shown only under All. Used on the export, FMZ3 and the commitments report (which uses its Pay Group column first). Funding (TDP/AFP/Allotment) is added up per pay group by account: each account takes the pay group of its Functional Areas on the Accounts tab. An account with Functional Areas in more than one pay group is counted under the one it has most of and listed as a key conflict in Data details. Commitment items show their description from the Commitment Item tab, with the code in small grey text. The spend plan has no pay group.</li>
@@ -710,6 +713,26 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       { name: "G3 Spend Plan FY27.xlsx", sheets: [{ name: "Spend Plan", aoa: sp }] }
     ];
   };
+
+  // The same test data written the way real exports often look: a title row above the headers, header variants, amounts as text
+  // ("($1,234.56)", "1,234.56-", "$-12.00"), fiscal year "FY27", period "P02", Functional Areas in lower case with stray spaces,
+  // account names with different case / trailing spaces, blank rows. Used by verify.js and written to samples/realistic/.
+  G3.makeMessyFiles = function () {
+    var F = G3.makeTestFiles(), key = F[0], ex = F[1].sheets[0].aoa;
+    var fmtAmt = function (v, i) { var a = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); if (v >= 0) return i % 3 ? a : "$" + a; return i % 3 === 0 ? "(" + "$" + a + ")" : i % 3 === 1 ? a + "-" : "$-" + a; };
+    var out = [["Status of Funds - Funds Execution Detail (GFEBS)"], [], ["Contract Doc No", "Commitment Item (FIPEX)", "Functional Area (FAREA)", "Appropriation Type", "Fiscal Year", "Fiscal Period", "Obligation Amt Cum", "Total Expenditure", "Disbursements"]];
+    ex.slice(1).forEach(function (r, i) {
+      if (i % 50 === 25) out.push([]);
+      out.push([r[0], r[1], " " + String(r[2]).toLowerCase() + "  ", r[3], "FY" + String(r[4]).slice(2), "P" + ("0" + r[5]).slice(-2), fmtAmt(r[6] - r[7], i), fmtAmt(r[6], i), fmtAmt(r[7], i + 1)]);
+    });
+    var mk = key.sheets.map(function (sh) {
+      var a = sh.aoa.map(function (r) { return r.slice(); });
+      if (sh.name === "Accounts") { a[0] = ["FA", "Account Name"]; a.slice(1).forEach(function (r) { r[0] = String(r[0]).toLowerCase(); r[1] = String(r[1]).toLowerCase() + "  "; }); }
+      if (sh.name === "Funding") { a[0] = a[0].map(function (h) { return h === "Account" ? "Acct" : h; }); a.slice(1).forEach(function (r) { r[1] = "$" + Number(r[1]).toLocaleString("en-US"); r[2] = Number(r[2]).toLocaleString("en-US"); }); }
+      return { name: sh.name, aoa: a };
+    });
+    return [{ name: "G3 Master Key (realistic).xlsx", sheets: mk }, { name: "Status of Funds export (realistic).xlsx", sheets: [{ name: "Sheet1", aoa: out }] }];
+  };
 })(window);
 
 </script>
@@ -739,7 +762,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 
   // ---------- helpers (Aviation funding.js) ----------
   function decodeX(h) { return String(h == null ? "" : h).replace(/_x([0-9a-fA-F]{4})_/g, function (m, x) { return String.fromCharCode(parseInt(x, 16)); }); }
-  function norm(h) { return decodeX(h).replace(/\u00a0/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+  function norm(h) { return canon(decodeX(h).replace(/\u00a0/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, "")); }
+  // real exports and keys label the same column several ways: fold the common ones onto one name
+  function canon(s) {
+    if (/^(func(tional|t)?area(farea|fa|code|cd|id)?|farea|fa)$/.test(s)) return "functionalarea";
+    if (/^(acct|account)(name|title|nm)?$/.test(s)) return "account";
+    if (/^(fiscalyr|fiscyear|fyr)$/.test(s)) return "fiscalyear";
+    if (/^(fiscalmonth|fiscalmonthno|fiscalmonthnumber|fiscalmo|fiscalperiod|fiscalper|period|postingperiod|fmonth)$/.test(s)) return "fiscalmonth";
+    if (/^(commitmentitem(fipex|code|cd)?|cmmtitem|cmtitem|fipex|ci)$/.test(s)) return "commitmentitem";
+    if (/^(totalexpenditures?|totalexp|commitmentamtcum|commitmentamount|commitmentscum)$/.test(s)) return "commitmentamtcum";
+    if (/^(disbursementamtcum|disbursements?|disbursementamount|disbursedamt|disbursed)$/.test(s)) return "disbursementamtcum";
+    return s;
+  }
   function isPii(h) { var s = decodeX(h).toLowerCase(); if (/social\s*_?security/.test(s)) return true; return s.split(/[^a-z0-9]+/).some(function (t) { return /^ssn|ssn$/.test(t); }); }
   function aliasMap(cols) { var m = {}; cols.forEach(function (c) { m[norm(c[1])] = c[0]; c[2].forEach(function (a) { if (!m[a]) m[a] = c[0]; }); }); return m; }
   function txt(v) { return v == null ? "" : String(v).replace(/\u00a0/g, " ").trim(); }
@@ -792,15 +826,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   G3.util = { norm: norm, txt: txt, parseAmt: parseAmt, idText: idText, kn: kn, an: an, dateIso: dateIso, aoaSource: aoaSource };
 
   // ---------- column aliases ----------
-  var ACCT_AL = ["account", "accountname", "acctname", "acct"], FA_AL = ["functionalareafarea", "functionalarea", "farea"];
+  var ACCT_AL = ["account", "accountname", "acctname", "acct"], FA_AL = ["functionalarea", "functionalareafarea", "farea"];
   var EXPORT_COLS = [   // Aviation Status of Funds export, unchanged (+ optional Pay Group / Internal Order if the export carries them)
-    ["doc", "Document Number", ["contractdocno"]], ["ci", "Commitment Item", ["commitmentitemfipex", "commitmentitem"]],
+    ["doc", "Document Number", ["contractdocno"]], ["ci", "Commitment Item", ["commitmentitem", "commitmentitemfipex"]],
     ["fa", "Functional Area", ["functionalareafarea", "functionalarea"]], ["appn", "Appropriation", ["appropriationtype", "appropriation"]],
-    ["fy", "Fiscal Year", ["fiscalyear"]], ["fm", "Fiscal Month", ["fiscalmonth", "fiscalmonthno", "fiscalmonthnumber", "fiscalmo", "fiscalperiod", "fiscalper"]],
-    ["com", "Total Expenditure", ["commitmentamtcum", "totalexpenditure", "commitments"]], ["disb", "Disbursement", ["disbursementamtcum", "disbursement", "disbursements"]],
+    ["fy", "Fiscal Year", ["fiscalyear"]], ["fm", "Fiscal Month", ["fiscalmonth"]],
+    ["com", "Total Expenditure", ["commitmentamtcum", "commitments"]], ["disb", "Disbursement", ["disbursementamtcum"]],
     ["pg", "Pay Group", ["paygroup", "paygrp"]], ["dpc", "Internal Order", ["internalorder", "dpc"]]
   ];
-  var EXPORT_ONLY = ["contractdocno", "commitmentitemfipex", "obligationamtcum", "commitmentamtcum", "disbursementamtcum"];
+  var EXPORT_ONLY = ["contractdocno", "obligationamtcum", "commitmentamtcum", "disbursementamtcum"];
   var COMMIT_COLS = [["business", "Business", []], ["fc", "Fund Center", ["fundscenter", "fundcenter"]], ["fund", "Fund", []], ["fundcode", "Fund Code", []],
     ["pg", "Pay Group", ["paygroup", "paygrp"]], ["fa", "Functional Area", FA_AL], ["io", "Internal Order", ["internalorder", "dpc"]], ["cc", "Cost Center", []],
     ["wbs", "WBS", ["wbselement"]], ["fp", "Funded Program", []], ["acct", "Account", ACCT_AL], ["sdn", "SDN", []], ["jd", "Journal Date", []],
@@ -811,7 +845,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     ["supplier", "Supplier", ["vendor"]], ["hdr", "Document Header Text", ["documentheadertext", "headertext"]], ["by", "Created by", ["createdby"]],
     ["openlc", "Amount Open (LC)", ["amountopenlc"]], ["refitem", "Reference item", []], ["cust", "Customer", []], ["wbs", "WBS element", ["wbs"]], ["cur", "Currency", []],
     ["cocd", "Company Code", []], ["ci", "Commitment item", ["commitmentitem"]], ["text", "Text", []]];
-  var FUND_COLS = [["fy", "Fiscal Year", ["fiscalyear", "fy"]], ["acct", "Account", ACCT_AL], ["tdp", "TDP", []], ["afp", "AFP", []], ["allot", "Allotment", ["allotment", "allot", "allotted", "allotmentamt", "allotmentamount", "allotments"]], ["sag", "SAG", []], ["mdep", "MDEP", []]];
+  var FUND_COLS = [["fy", "Fiscal Year", ["fiscalyear", "fy"]], ["acct", "Account", ACCT_AL], ["fa", "Functional Area", FA_AL], ["tdp", "TDP", []], ["afp", "AFP", []], ["allot", "Allotment", ["allotment", "allot", "allotted", "allotmentamt", "allotmentamount", "allotments"]], ["sag", "SAG", []], ["mdep", "MDEP", []]];
   var AKEY_COLS = [["fa", "Functional Area", FA_AL], ["acct", "Account", ACCT_AL], ["sag", "Sag", []], ["mdep", "MDEP", []]];
   var DKEY_COLS = [["dpc", "DPC", ["dpc", "internalorder", "dpccode"]], ["desc", "Description", ["description", "desc", "dpcdescription"]], ["acct", "Account", ACCT_AL], ["tdc", "TDC", ["tdc"]]];
   var CKEY_COLS = [["ci", "Commitment Item", ["commitmentitem", "commitmentitemfipex", "commititem", "ci"]], ["desc", "Description", ["description", "desc", "commitmentitemdescription", "cidescription"]]];
@@ -884,11 +918,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (a > 0) rep.positive++;
       if (type === "commit") rep.nCommit++; else rep.nOblig++;
       var pgc = idText(raw.pg), fa = idText(raw.fa); if (!pgc && G3.pgFromFa(fa)) rep.pgFromFa++;
-      return { type: type, pg: pgc || G3.pgFromFa(fa), fa: fa, dpc: idText(raw.io), rptAcct: txt(raw.acct), amt: FLIP_COMMIT_SIGN ? -a : a, sdn: idText(raw.sdn), fp: txt(raw.fp), fc: idText(raw.fc), fund: idText(raw.fund), wbs: idText(raw.wbs), cc: idText(raw.cc), et: et };
+      return { type: type, pg: pgc || G3.pgFromFa(fa), fa: fa, dpc: idText(raw.io), rptAcct: txt(raw.acct), raw: a, amt: a, sdn: idText(raw.sdn), fp: txt(raw.fp), fc: idText(raw.fc), fund: idText(raw.fund), wbs: idText(raw.wbs), cc: idText(raw.cc), et: et };
     }, rep);
+    // show both entry types as positive spending: if a type's rows net negative (GFEBS style) flip that type; reversals keep their opposite sign
+    ["commit", "oblig"].forEach(function (t) {
+      var rr = rows.filter(function (x) { return x.type === t; }), net = rr.reduce(function (a, x) { return a + x.raw; }, 0), flip = net < 0;
+      rr.forEach(function (x) { x.amt = flip ? -x.raw : x.raw; });
+      if (rr.length) rep.notes.push((t === "commit" ? "Commitment" : "Obligation") + " amounts came in " + (flip ? "negative and were flipped to positive" : "positive and were kept"));
+    });
     rep.notes.push(rep.nCommit + " commitment rows (count toward execution in TDP view)");
     rep.notes.push(rep.nOblig + " obligation rows loaded for spending-by-DPC tracking only (not added to totals; Status of Funds already counts obligations)");
-    if (rep.positive) rep.notes.push(rep.positive + " rows had positive amounts (become negative after the flip, e.g. reversals)");
     rep.notes.push(map.pg != null ? "Pay Group column used" + (rep.pgFromFa ? "; " + rep.pgFromFa + " blank pay groups filled from Functional Area" : "") : "No Pay Group column: pay group taken from the first 5 digits of Functional Area");
     rep.notes.push("Journal Date ignored (commitments are upcoming, with no working date)");
     return { rows: rows, report: rep };
@@ -919,7 +958,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var rows = rowsOf(src, hm, function (raw) {
       var ac = txt(raw.acct).replace(/\s+/g, " "); if (!ac) { skip(rep, "no Account"); return null; } if (/^total/i.test(ac)) { skip(rep, "total rows"); return null; }
       var f = function (k) { var x = parseAmt(raw[k]); return x == null || isNaN(x) ? 0 : x; };
-      return { acct: ac, fy: fyText(raw.fy), tdp: f("tdp"), afp: f("afp"), allot: map.allot != null ? f("allot") : null, sag: idText(raw.sag), mdep: idText(raw.mdep) };
+      return { acct: ac, fa: idText(raw.fa), fy: fyText(raw.fy), tdp: f("tdp"), afp: f("afp"), allot: map.allot != null ? f("allot") : null, sag: idText(raw.sag), mdep: idText(raw.mdep) };
     }, rep);
     if (!rep.hasAllot) rep.notes.push("No Allotment column, so the Allotment view is off. Put Allotment right of AFP to turn it on.");
     return { rows: rows, report: rep };
@@ -1016,6 +1055,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var faMap = {}, info = {};
     rows("fundkey").forEach(function (r) { addAcct(r.acct); });
     rows("acctkey").forEach(function (r) { var ac = addAcct(r.acct); if (!faMap[kn(r.fa)]) faMap[kn(r.fa)] = ac; });
+    // Aviation rule: Functional Area + Account pairs on the funding file fill gaps in the Accounts tab
+    rows("fundkey").forEach(function (r) { if (r.fa && !faMap[kn(r.fa)]) faMap[kn(r.fa)] = names[an(r.acct)]; });
+    // working fiscal year: the latest one in the funds export (what the dashboard opens on); no export -> the current fiscal year
+    var expFys = {}; rows("export").forEach(function (r) { if (r.fy) expFys[r.fy] = 1; });
+    var wfy = Object.keys(expFys).sort().pop() || cur; d.wfy = wfy;
     // pay groups per account, from the Functional Areas mapped to it on the Accounts tab
     var acctPgs = {}; rows("acctkey").forEach(function (r) { var k = an(r.acct), o = acctPgs[k] || (acctPgs[k] = {}); o[G3.pgFromFa(r.fa)] = 1; });
     // account pay group: the pay group of its Functional Areas; several -> the one with most FAs (first on ties), listed as a key conflict.
@@ -1034,42 +1078,55 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var hasCi = !!S.cikey;
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
     var UN = "Unmapped";
-    function acctFa(fa, bucket) { var a = faMap[kn(fa)]; if (a) return a; if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
+    // Functional Area -> Account. Exact match first (case, spaces and leading zeros ignored); if none, a key FA of 8+ characters that is the
+    // start of the report's FA (or the other way round) is accepted and counted in the data panel.
+    var faKeys = Object.keys(faMap).filter(function (k) { return k.length >= 8; }).sort(function (a, b) { return b.length - a.length; }), faMemo = {}; d.faPrefix = 0;
+    function faLookup(fa) {
+      var k = kn(fa); if (!k) return ""; if (faMap[k]) return faMap[k]; if (k in faMemo) return faMemo[k];
+      var hit = ""; for (var i = 0; i < faKeys.length; i++) if (k.indexOf(faKeys[i]) === 0 || (k.length >= 8 && faKeys[i].indexOf(k) === 0)) { hit = faMap[faKeys[i]]; break; }
+      return (faMemo[k] = hit);
+    }
+    function acctFa(fa, bucket) { var a = faLookup(fa); if (a) { if (!faMap[kn(fa)]) d.faPrefix++; return a; } if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
+    // pay group on a spending row: its ACCOUNT's pay group (Accounts tab) when the account is known; otherwise the row's own (Pay Group column / FA).
+    // Pay group never decides whether a row counts: under All every row counts.
+    var pgMemo = {};
+    function rowPg(ac, own) { if (ac && ac !== UN) { if (!(ac in pgMemo)) pgMemo[ac] = fundPg(ac); if (pgMemo[ac] != null) return pgMemo[ac]; } return own || ""; }
     // funding (no Fiscal Year column = current fiscal year)
     d.funding = []; var hasAllot = false;
-    rows("fundkey").forEach(function (r) { if (r.allot != null) hasAllot = true; d.funding.push({ fy: r.fy || cur, account: names[an(r.acct)], pg: fundPg(r.acct), tdp: r.tdp, afp: r.afp, allot: r.allot || 0, sag: r.sag, mdep: r.mdep }); info[an(r.acct)] = { sag: r.sag, mdep: r.mdep }; });
+    rows("fundkey").forEach(function (r) { if (r.allot != null) hasAllot = true; d.funding.push({ fy: r.fy || wfy, account: names[an(r.acct)], pg: fundPg(r.acct), tdp: r.tdp, afp: r.afp, allot: r.allot || 0, sag: r.sag, mdep: r.mdep }); info[an(r.acct)] = { sag: r.sag, mdep: r.mdep }; });
     rows("acctkey").forEach(function (r) { var i = info[an(r.acct)] || (info[an(r.acct)] = {}); if (!i.sag && r.sag) i.sag = r.sag; if (!i.mdep && r.mdep) i.mdep = r.mdep; });
     d.hasAllot = hasAllot; d.acctInfo = info;
     // execution lines: export (obligations / disbursements) + commitments (commitments report, current FY)
     d.lines = [];
-    rows("export").forEach(function (r) { ciSeen(r.ci); d.lines.push({ fy: r.fy || cur, fm: r.fm || curFm, account: acctFa(r.fa, unm.fa), pg: r.pg, fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
+    rows("export").forEach(function (r) { ciSeen(r.ci); var ac = acctFa(r.fa, unm.fa); d.lines.push({ fy: r.fy || wfy, fm: r.fm || curFm, account: ac, pg: rowPg(ac, r.pg), fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
     // commitments report rows: commitments feed execution; obligations feed spending-by-DPC only
     d.dpcLines = [];
     rows("commit").forEach(function (r) {
       var k = kn(r.dpc), m = dpcMap[k], ac = m && m.account ? m.account : (names[an(r.rptAcct)] || "");
       if (!m && r.dpc) unm.dpc[r.dpc] = (unm.dpc[r.dpc] || 0) + 1;
       ac = ac || UN;
-      d.dpcLines.push({ type: r.type, account: ac, pg: r.pg, dpc: r.dpc, amt: r.amt, sdn: r.sdn });
-      if (r.type === "commit") d.lines.push({ fy: cur, fm: null, upcoming: true, account: ac, pg: r.pg, dpc: r.dpc, doc: r.sdn, ci: "", commit: r.amt, oblig: 0, disb: 0, src: "commit" });
+      var pg = rowPg(ac, r.pg);
+      d.dpcLines.push({ type: r.type, account: ac, pg: pg, dpc: r.dpc, amt: r.amt, sdn: r.sdn });
+      if (r.type === "commit") d.lines.push({ fy: wfy, fm: null, upcoming: true, account: ac, pg: pg, dpc: r.dpc, doc: r.sdn, ci: "", commit: r.amt, oblig: 0, disb: 0, src: "commit" });
     });
     // spend plan: Prioritization -> Account (Spend Plan tab, or an exact account name); several prioritizations add up
     var plan = {};
     rows("plan").forEach(function (r) {
       var ac = prioMap[an(r.prio)] || names[an(r.prio)]; if (!ac) { unm.prio[r.prio] = (unm.prio[r.prio] || 0) + 1; return; }
-      var fy = r.fy || cur, key = fy + "|" + ac, p = plan[key] || (plan[key] = { fy: fy, account: ac, pg: null, m: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], prios: [] });
+      var fy = r.fy || wfy, key = fy + "|" + ac, p = plan[key] || (plan[key] = { fy: fy, account: ac, pg: null, m: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], prios: [] });
       for (var i = 0; i < 12; i++) p.m[i] += r.m[i]; p.prios.push(r.prio);
     });
     d.plan = Object.keys(plan).map(function (k) { return plan[k]; });
     // unliquidated (FMZ3): Functional Area -> Account (Accounts tab); Order = DPC
     d.ulo = rows("fmz3").map(function (r) {
-      var ac = faMap[kn(r.fa)] || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
+      var ac = faLookup(r.fa) || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
       if (!ac) { if (r.fa) unm.fmzFa[r.fa] = (unm.fmzFa[r.fa] || 0) + 1; ac = UN; }
       ciSeen(r.ci);
-      return Object.assign({}, r, { account: ac, pg: G3.pgFromFa(r.fa), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.ci || r.dt || "Other", desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
+      return Object.assign({}, r, { account: ac, pg: rowPg(ac, G3.pgFromFa(r.fa)), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.ci || r.dt || "Other", desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
     });
     if ([d.lines, d.ulo, d.dpcLines].some(function (a) { return a.some(function (x) { return x.account === UN; }); })) addAcct(UN);
     d.accounts = accounts;
-    var fys = {}; fys[cur] = 1; d.lines.forEach(function (l) { if (l.fy) fys[l.fy] = 1; }); d.funding.forEach(function (f) { fys[f.fy] = 1; });
+    var fys = {}; fys[wfy] = 1; d.lines.forEach(function (l) { if (l.fy) fys[l.fy] = 1; }); d.funding.forEach(function (f) { fys[f.fy] = 1; });
     d.fys = Object.keys(fys).sort();
     d.unmapped = unm;
     d.hasPg = { export: d.lines.some(function (l) { return l.src === "export" && l.pg; }), commit: !!S.commit, fmz3: d.ulo.some(function (u) { return u.pg; }) };
@@ -1082,7 +1139,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     // accounts whose funding can't be split by pay group (FAs in several pay groups)
     d.acctPg = {}; accounts.forEach(function (a) { d.acctPg[a.id] = fundPg(a.id); });
     d.pgConflicts = accounts.map(function (a) { var o = acctPgOrder[an(a.id)] || []; return { name: a.name, pgs: o, used: d.acctPg[a.id] }; }).filter(function (x) { return x.pgs.length > 1; });
-    if (d.fys.indexOf(G3.state.fy) < 0) G3.state.fy = cur;
+    if (G3._wfy !== wfy || d.fys.indexOf(G3.state.fy) < 0) { G3.state.fy = wfy; G3._wfy = wfy; }   // open on the export's fiscal year
+    // money check per dataset, so a zero on the page can be traced in Data details
+    var sum = function (a, f) { return a.reduce(function (t, x) { return t + (f(x) || 0); }, 0); }, byFy = function (a, f) { var o = {}; a.forEach(function (x) { o[x.fy] = (o[x.fy] || 0) + (f(x) || 0); }); return o; };
+    var ex = d.lines.filter(function (l) { return l.src === "export"; }), cm = d.lines.filter(function (l) { return l.src === "commit"; });
+    var od = function (l) { return l.oblig + l.disb; };
+    d.diag = {
+      fundkey: { total: sum(d.funding, function (f) { return f.tdp; }), label: "TDP", unmapped: 0, byFy: byFy(d.funding, function (f) { return f.tdp; }) },
+      export: { total: sum(ex, od), label: "obligations + disbursements", unmapped: sum(ex.filter(function (l) { return l.account === UN; }), od), byFy: byFy(ex, od), why: "Functional Area not on the Accounts tab" },
+      commit: { total: sum(d.dpcLines, function (x) { return x.amt; }), label: "commitments + obligations", unmapped: sum(d.dpcLines.filter(function (x) { return x.account === UN; }), function (x) { return x.amt; }), why: "Internal Order not on the DPC tab", commit: sum(cm, function (l) { return l.commit; }) },
+      fmz3: { total: sum(d.ulo, function (u) { return u.open; }), label: "open", unmapped: 0 },
+      plan: { total: sum(d.plan, function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), label: "planned", unmapped: sum(rows("plan").filter(function (r) { return !(prioMap[an(r.prio)] || names[an(r.prio)]); }), function (r) { return r.m.reduce(function (a, b) { return a + b; }, 0); }), why: "Prioritization not on the Spend Plan tab" }
+    };
     if (!d.hasAllot && G3.state.view === "allot") G3.state.view = "tdp";
   };
   G3.DATASET_COLS = {
@@ -1194,6 +1262,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   G3.varClass = function (v) { if (v == null || !isFinite(v)) return "na"; var a = Math.abs(v); return a <= .05 ? "g" : a <= .10 ? "y" : "r"; };
   G3.varText = function (v) { return v == null || !isFinite(v) ? "\u2014" : (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v * 100).toFixed(1) + "%"; };
   G3.chip = function (v) { var k = G3.varClass(v); return '<span class="vchip ' + k + '">' + (k === "na" ? "no plan" : G3.varText(v)) + "</span>"; };
+  // pace uses only current execution (obligations + disbursements): commitments can be months out
+  G3.paceUsed = function (t) { return t.level ? t.od / t.level : null; };
   G3.pace = function (used, expected) {
     if (expected == null || used == null) return { k: "na", t: "n/a" };
     var d = used - expected;
@@ -1224,7 +1294,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   };
   // spending by DPC: commitments + obligations from the commitments report (current fiscal year only)
   G3.dpcRollup = function (fy, filter) {
-    if (fy !== G3.fyOf(G3.asOf())) return [];
+    if (fy !== (G3.data.wfy || G3.fyOf(G3.asOf()))) return [];
     var by = {};
     (G3.data.dpcLines || []).forEach(function (x) {
       if (!G3.pgOk(x.pg) || (filter && !filter(x))) return;
@@ -1363,7 +1433,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function openDrawer(on) { $("drawer").hidden = !on; $("scrim").hidden = !on; $("btnInfo").setAttribute("aria-expanded", on ? "true" : "false"); if (on) renderDrawer(); }
   function renderDrawer() {
     var d = G3.data, S = d.sets, esc = G3.esc;
-    G3.$("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong>, read through the same loaders as real files. Your first upload clears it; after that each upload replaces only the datasets it brings." : "Showing data loaded from your files. Each upload replaces only the datasets it brings" + (d.asOf ? "; days open are counted to " + G3.dateText(d.asOf) : "") + ".";
+    var wf = d.wfy ? ' Working fiscal year: <strong>FY' + esc(d.wfy) + '</strong> (latest in the funds export; funding, commitments and the spend plan without a Fiscal Year column use it).' : '';
+    G3.$("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong>, read through the same loaders as real files. Your first upload clears it; after that each upload replaces only the datasets it brings." : "Showing data loaded from your files. Each upload replaces only the datasets it brings" + (d.asOf ? "; days open are counted to " + G3.dateText(d.asOf) : "") + "." + wf;
     G3.$("tFiles").querySelector("tbody").innerHTML = G3.KIND_ORDER.map(function (k) {
       var s = S[k];
       if (!s) return "<tr><td><strong>" + G3.KIND_LABEL[k] + '</strong></td><td class="muted" colspan="3">Not loaded</td></tr>';
@@ -1371,6 +1442,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (rp.fatal) notes.push('<span class="err">' + esc(rp.fatal) + "</span>");
       Object.keys(rp.skipped || {}).forEach(function (why) { notes.push('<span class="warn">' + G3.num(rp.skipped[why]) + " " + esc(why) + "</span>"); });
       (rp.notes || []).forEach(function (n) { notes.push(esc(n)); });
+      var dg = (d.diag || {})[k];
+      if (dg) {
+        var pc = dg.total ? dg.unmapped / dg.total : 0;
+        notes.unshift('<span class="dmoney"><b>' + G3.whole(dg.total) + "</b> " + dg.label + " loaded" + (dg.unmapped ? ' &middot; <span class="' + (pc > .05 ? "err" : "warn") + '">' + G3.whole(dg.unmapped) + " (" + G3.pct(pc, 0) + ") unmapped: " + esc(dg.why) + "</span>" : "") +
+          (dg.byFy && Object.keys(dg.byFy).length ? '<br><span class="muted">by fiscal year: ' + Object.keys(dg.byFy).sort().map(function (f) { return "FY" + esc(f) + " " + G3.money(dg.byFy[f]); }).join(" &middot; ") + "</span>" : "") +
+          (k === "export" && d.faPrefix ? '<br><span class="muted">' + G3.num(d.faPrefix) + " rows matched an Accounts-tab Functional Area by its first characters</span>" : "") + "</span>");
+      }
       return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";
     }).join("");
     var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"], ["ci", "Commitment items (export / FMZ3) missing from the Commitment Item tab"]];
@@ -1434,7 +1512,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var L = G3.lines(fy, aOk), F = G3.funding(fy, aOk), T = G3.totals(L, F), exp = expected(fy, st.view);
     var levelSub = st.view === "tdp" ? "" : G3.pct(T.tdp ? T.level / T.tdp : null, 0) + " of TDP";
     var accts = G3.data.accounts;
-    var pc = st.view === "allot" ? null : G3.pace(T.pctx, exp && exp.v);
+    var pc = st.view === "allot" ? null : G3.pace(G3.paceUsed(T), exp && exp.v);
     var h = G3.head("sof", "i-sof", "Status of Funds", G3.scope(V.label + " view" + (ui.acct ? " &middot; " + G3.esc(G3.acct(ui.acct).name) : "")));
     h += '<div class="filters">' +
       '<div class="segwrap"><span class="seglbl">Funding view</span>' + G3.viewSeg() + "</div>" +
@@ -1448,12 +1526,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       G3.kpi("res" + (V.withCommit ? "" : " excl"), "Commitments", G3.money(T.commit), "Upcoming (no date yet)") +
       G3.kpi("obl", "Obligations", G3.money(T.oblig), G3.pct(T.level ? T.oblig / T.level : null) + " of " + V.label) +
       G3.kpi("disb", "Disbursements", G3.money(T.disb), G3.pct(T.level ? T.disb / T.level : null) + " of " + V.label) +
-      G3.kpi("tex", "Total execution", G3.money(T.exec), G3.pct(T.pctx) + " of " + V.label + (pc ? ' <span class="pill ' + pc.k + '">' + pc.t + "</span>" : "")) +
+      G3.kpi("tex", "Total execution", G3.money(T.exec), G3.pct(T.pctx) + " of " + V.label + (pc ? ' <span class="pill ' + pc.k + '" title="Pace uses obligations + disbursements only (commitments can be months out)">' + pc.t + "</span>" : "")) +
       G3.kpi("bal " + (T.bal < 0 ? "bad" : "good"), "Balance available", G3.money(T.bal), "", ' title="' + G3.full(T.bal) + '"') + "</div>";
     // RM summary
     var rows = accts.map(function (a) { var t = G3.totals(G3.lines(fy, function (l) { return l.account === a.id; }), G3.funding(fy, function (f) { return f.account === a.id; })); t.a = a; return t; }).filter(function (t) { return t.level || t.exec; });
     var hi = rows.slice().sort(function (x, y) { return (y.pctx || 0) - (x.pctx || 0); })[0];
-    var over = rows.filter(function (t) { return st.view !== "allot" && exp && t.pctx - exp.v > .05; }).length, neg = rows.filter(function (t) { return t.bal < 0; }).length;
+    var over = rows.filter(function (t) { return st.view !== "allot" && exp && G3.paceUsed(t) - exp.v > .05; }).length, neg = rows.filter(function (t) { return t.bal < 0; }).length;
     h += '<div class="panel summary"><h2>Resource Manager summary</h2><p>FY' + fy + " " + V.label + " of " + G3.whole(T.level) + "; total execution " + G3.whole(T.exec) + " (" + G3.pct(T.pctx) + (exp ? ", " + exp.label.toLowerCase() : "") + "); balance available " + G3.whole(T.bal) + "." + (hi ? " Highest % executed: " + G3.esc(hi.a.name) + " at " + G3.pct(hi.pctx) + "." : "") + (st.view !== "allot" ? " " + over + " account" + (over === 1 ? "" : "s") + " over pace." : "") + (neg ? " <strong>" + neg + " account" + (neg === 1 ? " is" : "s are") + " over " + V.label + ".</strong>" : "") + (V.withCommit ? " Open commitments of " + G3.money(T.commit) + " are counted against TDP." : " " + G3.money(T.commit) + " of open commitments are not counted in this view.") + "</p></div>";
     // charts row 1
     h += '<div class="row r2"><div class="panel"><div class="tablehead"><h2>Execution by account vs ' + V.label + '</h2></div><div class="chartbox"><canvas id="cSofAcct"></canvas></div><p class="hint">Bar length = ' + V.label + ". Click an account to see its DPC breakdown.</p></div>" +
@@ -1477,7 +1555,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     // accounts table
     var cols = [["tdp", "TDP"], ["afp", "AFP"], ["allot", "Allotment"]];
     function trow(t, name, cls, caret) {
-      var pc2 = st.view === "allot" ? (t.bal < 0 ? { k: "over", t: "Over allotment" } : t.level && t.bal / t.level < .1 ? { k: "funder", t: "Under 10% left" } : { k: "on", t: "Funds available" }) : G3.pace(t.pctx, exp && exp.v);
+      var pc2 = st.view === "allot" ? (t.bal < 0 ? { k: "over", t: "Over allotment" } : t.level && t.bal / t.level < .1 ? { k: "funder", t: "Under 10% left" } : { k: "on", t: "Funds available" }) : G3.pace(G3.paceUsed(t), exp && exp.v);
       var inf = (G3.data.acctInfo || {})[G3.util.an(t.a ? t.a.id : "")] || {};
       return '<tr class="' + (cls || "") + '"><td>' + (caret || "") + name + '</td><td class="sec">' + G3.esc(t.a ? inf.sag || "" : "") + '</td><td class="sec">' + G3.esc(t.a ? inf.mdep || "" : "") + "</td>" + cols.map(function (c) { return '<td class="num' + (c[0] === st.view ? " act" : " sec") + '">' + G3.whole(t[c[0]]) + "</td>"; }).join("") +
         '<td class="num' + (V.withCommit ? "" : " sec") + '">' + G3.whole(t.commit) + '</td><td class="num">' + G3.whole(t.oblig) + '</td><td class="num">' + G3.whole(t.disb) + '</td><td class="num act"><strong>' + G3.whole(t.exec) + '</strong></td><td class="num act' + (t.bal < 0 ? " neg" : "") + '">' + G3.whole(t.bal) + '</td><td class="num"><span class="xbar"><i style="width:' + Math.min(100, (t.pctx || 0) * 100).toFixed(0) + "%" + (t.pctx > 1 ? ";background:#dc2626" : "") + '"></i></span>' + G3.pct(t.pctx) + '</td><td><span class="pill ' + pc2.k + '">' + pc2.t + "</span></td></tr>";
@@ -1615,7 +1693,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 /* Unliquidated (FMZ3): every open line, how old it is and how much is still open. */
 (function (w) {
   var G3 = w.G3;
-  var M = G3.mods.ulo = { ui: { q: "", ci: "", acct: "", age: "", sort: "days", asc: false, page: 0, open: {} } };
+  var M = G3.mods.ulo = { ui: { q: "", ci: "", age: "", sort: "days", asc: false, page: 0, open: {} } };
   M.BUCKETS = [["0-30", 0, 30], ["31-60", 31, 60], ["61-90", 61, 90], ["91-180", 91, 180], ["180+", 181, 1e9]];
   M.BCOL = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#dc2626"];
   M.days = function (r) { var d = G3.parseDate(r.date); return d ? Math.max(0, Math.round((G3.asOf() - d) / 864e5)) : 0; };
@@ -1635,14 +1713,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   var PER = 25;
   M.render = function (focus) {
     var ui = M.ui, root = G3.$("page-ulo"), all = M.rows(), q = ui.q.trim().toLowerCase();
-    var rows = all.filter(function (r) { return (!ui.ci || r.type === ui.ci) && (!ui.acct || r.account === ui.acct) && (ui.age === "" || r.b === +ui.age) && (!q || r._q.indexOf(q) >= 0); });
+    var rows = all.filter(function (r) { return (!ui.ci || r.type === ui.ci) && (ui.age === "" || r.b === +ui.age) && (!q || r._q.indexOf(q) >= 0); });
     var openT = G3.sum(rows, "open"), totT = G3.sum(rows, "total"), o90 = rows.filter(function (r) { return r.days > 90; }), o180 = rows.filter(function (r) { return r.days > 180; });
     var avg = rows.length ? G3.sum(rows, "days") / rows.length : 0, oldest = rows.reduce(function (m, r) { return Math.max(m, r.days); }, 0);
     var types = Object.keys(G3.group(all, "type")).sort(function (a, b) { return G3.ciLabel(a).localeCompare(G3.ciLabel(b)); });
     var h = G3.head("ulo", "i-ulo", "Unliquidated", "All open FMZ3 lines &middot; days open counted from Posting Date to " + G3.dateText(G3.data.asOf) + " &middot; " + (G3.state.pg === "All" ? "All pay groups" : "Pay group " + G3.esc(G3.state.pg)));
     h += '<div class="filters"><label class="grow">Search<input type="search" data-ui="q" placeholder="Traveler, FMZ number, header text, DPC, supplier" value="' + G3.esc(ui.q) + '"></label>' +
       '<label>Commitment item<select data-ui="ci"><option value="">All commitment items</option>' + types.map(function (c) { return '<option value="' + G3.esc(c) + '"' + (c === ui.ci ? " selected" : "") + ">" + G3.esc(G3.ciName(c) ? G3.ciName(c) + " (" + c + ")" : c) + "</option>"; }).join("") + "</select></label>" +
-      '<label>Account<select data-ui="acct"><option value="">All accounts</option>' + G3.data.accounts.map(function (a) { return '<option value="' + G3.esc(a.id) + '"' + (a.id === ui.acct ? " selected" : "") + ">" + G3.esc(a.name) + "</option>"; }).join("") + "</select></label>" +
       '<label>Days open<select data-ui="age"><option value="">Any age</option>' + M.BUCKETS.map(function (b, i) { return '<option value="' + i + '"' + (String(i) === ui.age ? " selected" : "") + ">" + b[0] + " days</option>"; }).join("") + "</select></label>" +
       G3.pgSeg() + '<button class="btn" type="button" id="uloReset">Reset</button></div>' + G3.pgNote("ulo");
     var zero = G3.data.sets.fmz3 && G3.data.sets.fmz3.report.skipped["zero-open rows excluded"];
@@ -1655,35 +1732,35 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var bsum = M.BUCKETS.map(function (b, i) { var rr = rows.filter(function (r) { return r.b === i; }); return { n: rr.length, v: G3.sum(rr, "open") }; });
     h += '<div class="panel"><div class="tablehead"><h2>Aging</h2><span class="muted small">Open amount by days since posting &middot; click a bucket to filter</span></div><div class="agestrip">' +
       bsum.map(function (s, i) { return '<button type="button" class="ageb' + (String(i) === ui.age ? " on" : "") + '" data-age="' + i + '" style="--bc:' + M.BCOL[i] + ";flex:" + Math.max(.6, openT ? s.v / openT * 10 : 1).toFixed(2) + '"><span class="al">' + M.BUCKETS[i][0] + ' days</span><span class="av">' + G3.money(s.v) + '</span><span class="an">' + s.n + " lines</span></button>"; }).join("") + "</div></div>";
-    h += '<div class="row r2"><div class="panel"><h2>Open amount by age and commitment item</h2><div class="chartbox"><canvas id="cUloAge"></canvas></div></div><div class="panel"><h2>Open amount by account</h2><div class="chartbox"><canvas id="cUloAcct"></canvas></div></div></div>';
+    h += '<div class="row r2"><div class="panel"><h2>Open amount by age and commitment item</h2><div class="chartbox"><canvas id="cUloAge"></canvas></div></div><div class="panel"><h2>Open amount by pay group</h2><div class="chartbox"><canvas id="cUloAcct"></canvas></div></div></div>';
     var k = ui.sort, dir = ui.asc ? 1 : -1;
     rows.sort(function (a, b) { var x = a[k], y = b[k]; return (x > y ? 1 : x < y ? -1 : 0) * dir; });
     var pages = Math.max(1, Math.ceil(rows.length / PER)); ui.page = Math.min(ui.page, pages - 1);
     var vis = rows.slice(ui.page * PER, ui.page * PER + PER);
-    var cols = [["type", "Commitment item"], ["desc", "Description"], ["acctName", "Account"], ["order", "DPC"], ["date", "Posted"], ["days", "Days open", "num"], ["total", "Total", "num"], ["open", "Open", "num"], ["liq", "Liquidated", "num"]];
+    var cols = [["type", "Commitment item"], ["desc", "Description"], ["order", "DPC"], ["date", "Posted"], ["days", "Days open", "num"], ["total", "Total", "num"], ["open", "Open", "num"], ["liq", "Liquidated", "num"]];
     function det(l, v) { return v ? "<div><span>" + l + "</span><b>" + G3.esc(v) + "</b></div>" : ""; }
     h += '<div class="panel"><div class="tablehead"><h2>Open lines</h2><div class="tabletools"><span class="muted small">' + rows.length + " lines &middot; " + G3.whole(openT) + ' open</span><button class="btn sm" type="button" id="uloCsv">Export CSV</button></div></div><p class="muted small">Over 90 days is amber, over 180 days red. Click a row for the FMZ number and the rest of the line. Click a column header to sort.</p>' +
       '<div class="tablewrap"><table class="grid ulo"><thead><tr><th></th>' + cols.map(function (c) { return '<th data-k="' + c[0] + '" class="' + (c[2] || "") + (c[0] === k ? " sorted" + (ui.asc ? " asc" : "") : "") + '">' + c[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
       vis.map(function (r) {
         var fl = r.days > 180 ? "red" : r.days > 90 ? "amber" : "", op = ui.open[r._i], dn = G3.dpcName(r.order);
-        var s = '<tr class="ulr ' + fl + '" data-row="' + r._i + '"><td class="caret">' + (op ? "\u25BE" : "\u25B8") + '</td><td class="cic">' + G3.ciPill(r.type) + '</td><td class="wrapc">' + (r.traveler ? '<strong>' + G3.esc(r.desc) + '</strong>' : G3.esc(r.desc)) + "</td><td>" + G3.esc(r.acctName) + '</td><td class="wrapc small">' + (dn ? G3.esc(dn) : G3.esc(r.order || "")) + "</td><td>" + G3.dateText(r.date) + '</td><td class="num"><span class="agepill" style="--bc:' + M.BCOL[r.b] + '">' + r.days + 'd</span></td><td class="num">' + G3.full(r.total) + '</td><td class="num"><strong>' + G3.full(r.open) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (r.liq * 100).toFixed(0) + '%;background:#16a34a"></i></span>' + G3.pct(r.liq, 0) + "</td></tr>";
-        if (op) s += '<tr class="uldet"><td></td><td colspan="9"><div class="detgrid">' + det("FMZ number (Earmarked Funds)", r.fmz) + det("Document type", r.dt) + det("Reference", r.ref) + det("Document Header Text", r.hdr) + det("Commitment item", r.ci + (G3.ciName(r.ci) ? " \u2013 " + G3.ciName(r.ci) : "")) + det("Functional Area", r.fa) + det("Pay group", r.pg || "None (other appropriation)") + det("Order (DPC)", r.order + (dn ? " \u2013 " + dn : "")) + det("Fund", r.fund) + det("Funds Center", r.fc) + det("Cost Center", r.cc) + det("G/L Account", r.gl) + det("Supplier", r.supplier) + det("Created by", r.by) + det("Document Date", G3.dateText(r.docdate)) + det("Text", r.text) + "</div></td></tr>";
+        var s = '<tr class="ulr ' + fl + '" data-row="' + r._i + '"><td class="caret">' + (op ? "\u25BE" : "\u25B8") + '</td><td class="cic">' + G3.ciPill(r.type) + '</td><td class="wrapc">' + (r.traveler ? '<strong>' + G3.esc(r.desc) + '</strong>' : G3.esc(r.desc)) + '</td><td class="wrapc small">' + (dn ? G3.esc(dn) : G3.esc(r.order || "")) + "</td><td>" + G3.dateText(r.date) + '</td><td class="num"><span class="agepill" style="--bc:' + M.BCOL[r.b] + '">' + r.days + 'd</span></td><td class="num">' + G3.full(r.total) + '</td><td class="num"><strong>' + G3.full(r.open) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (r.liq * 100).toFixed(0) + '%;background:#16a34a"></i></span>' + G3.pct(r.liq, 0) + "</td></tr>";
+        if (op) s += '<tr class="uldet"><td></td><td colspan="8"><div class="detgrid">' + det("FMZ number (Earmarked Funds)", r.fmz) + det("Document type", r.dt) + det("Reference", r.ref) + det("Document Header Text", r.hdr) + det("Commitment item", r.ci + (G3.ciName(r.ci) ? " \u2013 " + G3.ciName(r.ci) : "")) + det("Functional Area", r.fa) + det("Pay group", r.pg || "None (other appropriation)") + det("Order (DPC)", r.order + (dn ? " \u2013 " + dn : "")) + det("Fund", r.fund) + det("Funds Center", r.fc) + det("Cost Center", r.cc) + det("G/L Account", r.gl) + det("Supplier", r.supplier) + det("Created by", r.by) + det("Document Date", G3.dateText(r.docdate)) + det("Text", r.text) + "</div></td></tr>";
         return s;
-      }).join("") + (vis.length ? "" : '<tr><td colspan="10" class="muted">Nothing matches the current filters.</td></tr>') + "</tbody></table></div>" +
+      }).join("") + (vis.length ? "" : '<tr><td colspan="9" class="muted">Nothing matches the current filters.</td></tr>') + "</tbody></table></div>" +
       '<div class="pager"><button class="btn sm" type="button" data-pg="-1"' + (ui.page ? "" : " disabled") + '>&lsaquo; Prev</button><span class="muted small">Page ' + (ui.page + 1) + " of " + pages + '</span><button class="btn sm" type="button" data-pg="1"' + (ui.page < pages - 1 ? "" : " disabled") + ">Next &rsaquo;</button></div></div>";
     root.innerHTML = h;
     G3.bindCommon(root, M);
     if (focus) { var inp = root.querySelector('[data-ui="' + focus + '"]'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
-    G3.$("uloReset").onclick = function () { Object.assign(ui, { q: "", ci: "", acct: "", age: "", page: 0, open: {} }); G3.state.pg = "All"; G3.refresh(); };
+    G3.$("uloReset").onclick = function () { Object.assign(ui, { q: "", ci: "", age: "", page: 0, open: {} }); G3.state.pg = "All"; G3.refresh(); };
     root.querySelectorAll("[data-age]").forEach(function (b) { b.onclick = function () { var v = b.getAttribute("data-age"); ui.age = ui.age === v ? "" : v; ui.page = 0; M.render(); }; });
     root.querySelectorAll("tr.ulr").forEach(function (tr) { tr.onclick = function () { var i = tr.getAttribute("data-row"); ui.open[i] = !ui.open[i]; M.render(); }; });
     root.querySelectorAll("th[data-k]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-k"); if (ui.sort === kk) ui.asc = !ui.asc; else { ui.sort = kk; ui.asc = ["type", "desc", "acctName", "order", "date"].indexOf(kk) >= 0; } M.render(); }; });
     root.querySelectorAll("[data-pg]").forEach(function (b) { b.onclick = function () { ui.page += +b.getAttribute("data-pg"); M.render(); }; });
-    G3.$("uloCsv").onclick = function () { G3.csv([["FMZ number", "Pay group", "Commitment item", "Commitment item description", "Description", "Traveler", "Account", "DPC", "DPC description", "Posting date", "Days open", "Total", "Open", "Document Header Text", "Functional Area", "Reference", "Supplier"]].concat(rows.map(function (r) { return [r.fmz, r.pg, r.type, G3.ciName(r.type), r.desc, r.traveler, r.acctName, r.order, G3.dpcName(r.order), r.date, r.days, r.total.toFixed(2), r.open.toFixed(2), r.hdr, r.fa, r.ref, r.supplier]; })), "G3-Unliquidated.csv"); };
+    G3.$("uloCsv").onclick = function () { G3.csv([["FMZ number", "Pay group", "Commitment item", "Commitment item description", "Description", "Traveler", "DPC", "DPC description", "Posting date", "Days open", "Total", "Open", "Document Header Text", "Functional Area", "Reference", "Supplier"]].concat(rows.map(function (r) { return [r.fmz, r.pg, r.type, G3.ciName(r.type), r.desc, r.traveler, r.order, G3.dpcName(r.order), r.date, r.days, r.total.toFixed(2), r.open.toFixed(2), r.hdr, r.fa, r.ref, r.supplier]; })), "G3-Unliquidated.csv"); };
     var tys = Object.keys(G3.group(rows, "type")).sort();
     G3.chart("cUloAge", { type: "bar", data: { labels: M.BUCKETS.map(function (b) { return b[0] + " days"; }), datasets: tys.map(function (t) { return { label: G3.ciLabel(t), data: M.BUCKETS.map(function (b, i) { return G3.sum(rows.filter(function (r) { return r.type === t && r.b === i; }), "open"); }), backgroundColor: M.typeCol(t), stack: "a" }; }) }, options: { scales: { x: { stacked: true, grid: { display: false } }, y: Object.assign({ stacked: true }, G3.axMoney) }, plugins: { tooltip: G3.tipMoney } } });
-    var byA = Object.keys(G3.group(rows, "acctName")).map(function (a) { var rr = rows.filter(function (r) { return r.acctName === a; }); return { a: a, v: G3.sum(rr, "open"), o: G3.sum(rr.filter(function (r) { return r.days > 90; }), "open"), n: rr.length }; }).sort(function (x, y) { return y.v - x.v; });
-    G3.chart("cUloAcct", { type: "bar", data: { labels: byA.map(function (x) { return x.a + " (" + x.n + ")"; }), datasets: [{ label: "Open 0\u201390 days", data: byA.map(function (x) { return x.v - x.o; }), backgroundColor: "#3b82f6", stack: "c", borderRadius: 4 }, { label: "Open over 90 days", data: byA.map(function (x) { return x.o; }), backgroundColor: "#f97316", stack: "c", borderRadius: 4 }] }, options: { indexAxis: "y", scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
+    var byA = Object.keys(G3.group(rows, function (r) { return r.pg || "No pay group"; })).map(function (a) { var rr = rows.filter(function (r) { return (r.pg || "No pay group") === a; }); return { a: a, v: G3.sum(rr, "open"), o: G3.sum(rr.filter(function (r) { return r.days > 90; }), "open"), n: rr.length }; }).sort(function (x, y) { return y.v - x.v; });
+    G3.chart("cUloAcct", { type: "bar", data: { labels: byA.map(function (x) { return (/^\d/.test(x.a) ? "PG " : "") + x.a + " (" + x.n + ")"; }), datasets: [{ label: "Open 0\u201390 days", data: byA.map(function (x) { return x.v - x.o; }), backgroundColor: "#3b82f6", stack: "c", borderRadius: 4 }, { label: "Open over 90 days", data: byA.map(function (x) { return x.o; }), backgroundColor: "#f97316", stack: "c", borderRadius: 4 }] }, options: { indexAxis: "y", scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
   };
 })(window);
 
@@ -1726,19 +1803,19 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (ui.tdc && !R.tdcs.some(function (t) { return t.tdc === ui.tdc; })) ui.tdc = "";
       var h = G3.head(id, c.icon, c.title, G3.scope((R.accts.length ? R.accts.map(G3.esc).join(", ") : '<span class="warn">no account matched; see Data details</span>')));
       h += '<div class="filters">' + G3.fySel() + G3.pgSeg() + '<div class="segwrap"><span class="seglbl">Trend chart</span>' + G3.seg("mode", [["monthly", "Monthly"], ["cumulative", "Cumulative"]], ui.mode) + '</div><button class="btn" type="button" id="' + id + 'Reset">Reset</button></div>' + G3.pgNote();
-      var pctT = R.tdp ? (R.spent + R.commit) / R.tdp : null, pc = G3.pace(pctT, el.frac), v = R.planTD ? (R.spent - R.planTD) / R.planTD : null, top = R.tdcs[0], yoy = R.priorTD ? (R.spent - R.priorTD) / R.priorTD : null;
+      var pctT = R.tdp ? (R.spent + R.commit) / R.tdp : null, pc = G3.pace(R.tdp ? R.spent / R.tdp : null, el.frac), v = R.planTD ? (R.spent - R.planTD) / R.planTD : null, top = R.tdcs[0], yoy = R.priorTD ? (R.spent - R.priorTD) / R.priorTD : null;
       var u90 = R.ulo.filter(function (u) { return u.days > 90; });
       h += '<div class="kpis k6">' +
         G3.kpi("", "Executed FYTD", G3.money(R.spent), "Obligations + disbursements &middot; " + G3.pct(R.tdp ? R.spent / R.tdp : null, 0) + " of TDP", ' style="--st:' + c.color + '"') +
         G3.kpi("res", "Open commitments", G3.money(R.commit), "Upcoming spending (no date yet), from the commitments report") +
-        G3.kpi("", "TDP used", G3.pct(pctT), "Incl. commitments &middot; TDP " + G3.money(R.tdp) + ' <span class="pill ' + pc.k + '">' + pc.t + "</span>", ' style="--st:#b08968"') +
+        G3.kpi("", "TDP used", G3.pct(pctT), "Incl. commitments &middot; TDP " + G3.money(R.tdp) + ' <span class="pill ' + pc.k + '" title="Pace uses obligations + disbursements only (commitments can be months out)">' + pc.t + "</span>", ' style="--st:#b08968"') +
         G3.kpi("", "vs spend plan", '<span class="vtxt ' + G3.varClass(v) + '">' + G3.varText(v) + "</span>", G3.money(R.spent) + " actual / " + G3.money(R.planTD) + " planned to date", ' style="--st:#0d9488"') +
         G3.kpi("", "Largest TDC", top ? '<span class="kt">' + G3.esc(top.tdc) + "</span>" : "\u2014", top ? G3.money(top.total) + " &middot; " + G3.pct(R.dpcTotal ? top.total / R.dpcTotal : null, 0) + " of DPC spending" : "No commitments report rows", ' style="--st:#7c3aed"') +
         G3.kpi(u90.length ? "warnv" : "", "Unliquidated open", G3.money(R.uloOpen), R.ulo.length + " lines &middot; " + G3.money(G3.sum(u90, "open")) + " over 90 days", ' style="--st:#d97706"') + "</div>";
       // TDC breakout
-      var noDpc = fy !== G3.fyOf(G3.asOf());
+      var noDpc = fy !== (G3.data.wfy || G3.fyOf(G3.asOf()));
       h += '<div class="panel"><div class="tablehead"><h2>Breakout by TDC</h2><span class="muted small">Obligations + commitments by Internal Order from the commitments report, grouped by TDC from the DPC key &middot; click a TDC to see its DPCs</span></div>';
-      if (noDpc || !R.tdcs.length) h += '<div class="nodata">' + (noDpc ? "The commitments report covers the current fiscal year (FY" + G3.fyOf(G3.asOf()) + "), so the TDC and DPC breakout shows there." : "No commitments report rows for this program yet.") + "</div>";
+      if (noDpc || !R.tdcs.length) h += '<div class="nodata">' + (noDpc ? "The commitments report covers the working fiscal year (FY" + (G3.data.wfy || G3.fyOf(G3.asOf())) + "), so the TDC and DPC breakout shows there." : "No commitments report rows for this program yet.") + "</div>";
       else {
         h += '<div class="row dpcrow"><div class="chartbox tall"><canvas id="c' + id + 'Tdc"></canvas></div><div class="tablewrap"><table class="grid tdct"><thead><tr><th>TDC</th><th class="num">DPCs</th><th class="num">Obligations</th><th class="num">Commitments</th><th class="num">Total</th><th class="num">% of program</th><th class="num">Unliquidated</th></tr></thead><tbody>' +
           R.tdcs.map(function (t, i) { var sh = R.dpcTotal ? t.total / R.dpcTotal : 0; return '<tr class="tdcr' + (t.tdc === ui.tdc ? " sel" : "") + '" data-tdc="' + G3.esc(t.tdc) + '"><td><span class="tdcdot" style="background:' + TDCCOL[i % TDCCOL.length] + '"></span><strong>' + G3.esc(t.tdc) + '</strong></td><td class="num">' + t.dpcs.length + '</td><td class="num">' + G3.whole(t.oblig) + '</td><td class="num">' + G3.whole(t.commit) + '</td><td class="num"><strong>' + G3.whole(t.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + "%;background:" + TDCCOL[i % TDCCOL.length] + '"></i></span>' + G3.pct(sh, 0) + '</td><td class="num">' + G3.money(t.ulo) + "</td></tr>"; }).join("") +
@@ -1762,7 +1839,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; G3.state.pg = "All"; G3.refresh(); };
       root.querySelectorAll("tr.tdcr").forEach(function (tr) { tr.onclick = function () { var t = tr.getAttribute("data-tdc"); ui.tdc = ui.tdc === t ? "" : t; M.render(); }; });
       var all = G3.$(id + "AllTdc"); if (all) all.onclick = function () { ui.tdc = ""; M.render(); };
-      G3.$(id + "Ulo").onclick = function () { var U = G3.mods.ulo.ui; U.acct = R.accts.length === 1 ? R.accts[0] : ""; U.page = 0; G3.go("ulo"); };
+      G3.$(id + "Ulo").onclick = function () { G3.mods.ulo.ui.page = 0; G3.go("ulo"); };
       // charts
       if (!noDpc && R.tdcs.length) G3.chart("c" + id + "Tdc", { type: "bar", data: { labels: R.tdcs.map(function (t) { return t.tdc; }), datasets: [{ label: "Obligations", data: R.tdcs.map(function (t) { return t.oblig; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length]; }), stack: "t", borderRadius: 4 }, { label: "Commitments", data: R.tdcs.map(function (t) { return t.commit; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length] + "66"; }), stack: "t", borderRadius: 4 }] },
         options: { indexAxis: "y", onClick: function (e, el2) { if (el2.length) { var t = R.tdcs[el2[0].index].tdc; ui.tdc = ui.tdc === t ? "" : t; M.render(); } }, scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } } }, plugins: { tooltip: G3.tipMoney, legend: { labels: { generateLabels: function () { return [{ text: "Obligations (solid)", fillStyle: "#64748b", strokeStyle: "#64748b", pointStyle: "circle" }, { text: "Commitments (light)", fillStyle: "#cbd5e1", strokeStyle: "#cbd5e1", pointStyle: "circle" }]; } } } } } });
@@ -1776,7 +1853,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       G3.chart("c" + id + "Main", { type: "bar", data: { labels: G3.MONTHS.map(function (m, i) { return G3.monthLabel(fy, i + 1); }).concat(["Upcoming"]), datasets: ds }, options: { interaction: { mode: "index", intersect: false }, scales: { y: G3.axMoney, x: { grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
       var tp = R.dps.slice(0, 10);
       G3.chart("c" + id + "Top", { type: "bar", data: { labels: tp.map(function (d) { return d.name.length > 30 ? d.name.slice(0, 29) + "\u2026" : d.name; }), datasets: [{ label: "Obligations", data: tp.map(function (d) { return d.oblig; }), backgroundColor: C.oblig, stack: "d" }, { label: "Commitments", data: tp.map(function (d) { return d.commit; }), backgroundColor: C.commit, stack: "d" }] }, options: { indexAxis: "y", scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, font: { size: 10.5 } } } }, plugins: { tooltip: G3.tipMoney } } });
-      var pgs = G3.PAYGROUPS.filter(function (p) { return G3.state.pg === "All" || p === G3.state.pg; }).concat(G3.state.pg === "All" ? [""] : []), dlp = G3.data.dpcLines.filter(function (x) { return R.accts.indexOf(x.account) >= 0 && fy === G3.fyOf(G3.asOf()); });
+      var pgs = G3.PAYGROUPS.filter(function (p) { return G3.state.pg === "All" || p === G3.state.pg; }).concat(G3.state.pg === "All" ? [""] : []), dlp = G3.data.dpcLines.filter(function (x) { return R.accts.indexOf(x.account) >= 0 && fy === (G3.data.wfy || G3.fyOf(G3.asOf())); });
       var pgv = pgs.map(function (p) { return G3.sum(dlp.filter(function (x) { return x.pg === p; }), "amt"); });
       G3.chart("c" + id + "Pg", { type: "doughnut", data: { labels: pgs.map(function (p, i) { return (p ? "PG " + p : "No PG (131\u2026)") + "  " + G3.money(pgv[i]); }), datasets: [{ data: pgv, backgroundColor: pgs.map(function (p) { return p ? G3.pgCol(p) : "#94a3b8"; }), borderWidth: 2, borderColor: "#fff" }] }, options: { cutout: "62%", plugins: { legend: { position: "right" }, tooltip: { callbacks: { label: function (x) { return " " + G3.whole(x.raw); } } } } } });
     };
@@ -1818,9 +1895,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     h += '<div class="tiles t7">' + tiles.map(function (t) { return '<button class="tile ' + t[1] + '" type="button" data-go="' + t[0] + '"><span class="tic"><svg class="ic"><use href="#' + t[2] + '"/></svg></span><span class="tt">' + t[3] + '</span><span class="ts">' + t[4] + "</span></button>"; }).join("") + "</div>";
     // SOF card
     var accts = G3.data.accounts.map(function (a) { var t = G3.totals(G3.lines(fy, function (l) { return l.account === a.id; }), G3.funding(fy, function (f) { return f.account === a.id; })); t.a = a; return t; }).sort(function (x, y) { return (y.pctx || 0) - (x.pctx || 0); });
-    var pc = st.view === "allot" ? null : G3.pace(T.pctx, exp && exp.v);
+    var pc = st.view === "allot" ? null : G3.pace(G3.paceUsed(T), exp && exp.v);
     var sofB = '<div class="big3">' + stat(V.label, G3.money(T.level), st.view === "tdp" ? "AFP " + G3.money(T.afp) + (G3.data.hasAllot ? " &middot; Allot " + G3.money(T.allot) : "") : "TDP " + G3.money(T.tdp)) + stat("Total execution", G3.money(T.exec), V.withCommit ? "Incl. " + G3.money(T.commit) + " commitments" : "Obligations + disbursements") + stat("Balance", G3.money(T.bal), V.label + " &minus; execution", T.bal < 0 ? "bad" : "good") + "</div>" +
-      '<div class="gwrap">' + G3.track(T.pctx || 0, "linear-gradient(90deg,#60a5fa,#2563eb)", exp ? exp.v : null, exp ? exp.label : "") + '<div class="gl"><span>' + G3.pct(T.pctx, 0) + " of " + V.label + " executed</span>" + (pc ? '<span class="pill ' + pc.k + '">' + pc.t + "</span>" : "") + "</div></div>" +
+      '<div class="gwrap">' + G3.track(T.pctx || 0, "linear-gradient(90deg,#60a5fa,#2563eb)", exp ? exp.v : null, exp ? exp.label : "") + '<div class="gl"><span>' + G3.pct(T.pctx, 0) + " of " + V.label + " executed</span>" + (pc ? '<span class="pill ' + pc.k + '" title="Pace uses obligations + disbursements only (commitments can be months out)">' + pc.t + "</span>" : "") + "</div></div>" +
       '<div class="hacc"><h4>Accounts by % executed</h4>' + accts.map(function (t) { return '<div class="ha"><span class="nm">' + G3.esc(t.a.name) + '</span><div class="tr"><div class="fi' + (t.pctx > 1 ? " over" : "") + '" style="width:' + Math.min(100, (t.pctx || 0) * 100).toFixed(1) + '%"></div>' + (exp ? '<span class="mk2" style="left:' + (exp.v * 100).toFixed(1) + '%"></span>' : "") + '</div><span class="nv">' + G3.pct(t.pctx, 0) + " &middot; " + G3.money(t.exec) + "</span></div>"; }).join("") + "</div>";
     // ULO card
     var B = G3.mods.ulo.BUCKETS, bs = B.map(function (b, i) { return G3.sum(ulo.filter(function (r) { return r.b === i; }), "open"); });

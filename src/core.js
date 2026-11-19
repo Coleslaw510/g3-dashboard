@@ -92,6 +92,8 @@
   G3.varClass = function (v) { if (v == null || !isFinite(v)) return "na"; var a = Math.abs(v); return a <= .05 ? "g" : a <= .10 ? "y" : "r"; };
   G3.varText = function (v) { return v == null || !isFinite(v) ? "\u2014" : (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v * 100).toFixed(1) + "%"; };
   G3.chip = function (v) { var k = G3.varClass(v); return '<span class="vchip ' + k + '">' + (k === "na" ? "no plan" : G3.varText(v)) + "</span>"; };
+  // pace uses only current execution (obligations + disbursements): commitments can be months out
+  G3.paceUsed = function (t) { return t.level ? t.od / t.level : null; };
   G3.pace = function (used, expected) {
     if (expected == null || used == null) return { k: "na", t: "n/a" };
     var d = used - expected;
@@ -122,7 +124,7 @@
   };
   // spending by DPC: commitments + obligations from the commitments report (current fiscal year only)
   G3.dpcRollup = function (fy, filter) {
-    if (fy !== G3.fyOf(G3.asOf())) return [];
+    if (fy !== (G3.data.wfy || G3.fyOf(G3.asOf()))) return [];
     var by = {};
     (G3.data.dpcLines || []).forEach(function (x) {
       if (!G3.pgOk(x.pg) || (filter && !filter(x))) return;
@@ -261,7 +263,8 @@
   function openDrawer(on) { $("drawer").hidden = !on; $("scrim").hidden = !on; $("btnInfo").setAttribute("aria-expanded", on ? "true" : "false"); if (on) renderDrawer(); }
   function renderDrawer() {
     var d = G3.data, S = d.sets, esc = G3.esc;
-    G3.$("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong>, read through the same loaders as real files. Your first upload clears it; after that each upload replaces only the datasets it brings." : "Showing data loaded from your files. Each upload replaces only the datasets it brings" + (d.asOf ? "; days open are counted to " + G3.dateText(d.asOf) : "") + ".";
+    var wf = d.wfy ? ' Working fiscal year: <strong>FY' + esc(d.wfy) + '</strong> (latest in the funds export; funding, commitments and the spend plan without a Fiscal Year column use it).' : '';
+    G3.$("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong>, read through the same loaders as real files. Your first upload clears it; after that each upload replaces only the datasets it brings." : "Showing data loaded from your files. Each upload replaces only the datasets it brings" + (d.asOf ? "; days open are counted to " + G3.dateText(d.asOf) : "") + "." + wf;
     G3.$("tFiles").querySelector("tbody").innerHTML = G3.KIND_ORDER.map(function (k) {
       var s = S[k];
       if (!s) return "<tr><td><strong>" + G3.KIND_LABEL[k] + '</strong></td><td class="muted" colspan="3">Not loaded</td></tr>';
@@ -269,6 +272,13 @@
       if (rp.fatal) notes.push('<span class="err">' + esc(rp.fatal) + "</span>");
       Object.keys(rp.skipped || {}).forEach(function (why) { notes.push('<span class="warn">' + G3.num(rp.skipped[why]) + " " + esc(why) + "</span>"); });
       (rp.notes || []).forEach(function (n) { notes.push(esc(n)); });
+      var dg = (d.diag || {})[k];
+      if (dg) {
+        var pc = dg.total ? dg.unmapped / dg.total : 0;
+        notes.unshift('<span class="dmoney"><b>' + G3.whole(dg.total) + "</b> " + dg.label + " loaded" + (dg.unmapped ? ' &middot; <span class="' + (pc > .05 ? "err" : "warn") + '">' + G3.whole(dg.unmapped) + " (" + G3.pct(pc, 0) + ") unmapped: " + esc(dg.why) + "</span>" : "") +
+          (dg.byFy && Object.keys(dg.byFy).length ? '<br><span class="muted">by fiscal year: ' + Object.keys(dg.byFy).sort().map(function (f) { return "FY" + esc(f) + " " + G3.money(dg.byFy[f]); }).join(" &middot; ") + "</span>" : "") +
+          (k === "export" && d.faPrefix ? '<br><span class="muted">' + G3.num(d.faPrefix) + " rows matched an Accounts-tab Functional Area by its first characters</span>" : "") + "</span>");
+      }
       return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";
     }).join("");
     var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"], ["ci", "Commitment items (export / FMZ3) missing from the Commitment Item tab"]];

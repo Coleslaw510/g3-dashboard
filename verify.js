@@ -114,7 +114,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const dtext = await p.textContent('#drawer'); ok(/obligation rows loaded for spending-by-DPC/i.test(dtext) && /NGZZ99/.test(dtext) && /25G1/.test(dtext), 'drawer shows obligation count and unmapped DPC');
   await p.click('#btnClose');
   // ---- upload samples through the UI ----
-  const files = fs.readdirSync(path.join(__dirname, 'samples')).map(f => path.join(__dirname, 'samples', f));
+  const files = fs.readdirSync(path.join(__dirname, 'samples')).filter(f => /\.xlsx$/.test(f)).map(f => path.join(__dirname, 'samples', f));
   await p.setInputFiles('#fileInput', files); await p.waitForFunction(() => G3.data.source === 'file', null, { timeout: 15000 }); await p.waitForTimeout(800);
   const kinds = await p.evaluate(() => Object.keys(G3.data.sets).map(k => k + '<-' + G3.data.sets[k].name + (G3.data.sets[k].sheet ? '[' + G3.data.sets[k].sheet + ']' : '')).join('\n'));
   console.log(kinds);
@@ -134,6 +134,37 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const C1 = await p.evaluate(() => [G3.data.source, G3.data.ulo.length, Math.round(G3.sum(G3.data.lines, 'commit'))]);
   ok(JSON.stringify(C1) === JSON.stringify(C2) && !e2.length, 'save-with-data v2 round trip ' + JSON.stringify(C2));
   fs.unlinkSync(sp);
+  // ---- pace, DPC signs, Unliquidated columns (test data) ----
+  const p3 = await ctx.newPage(); p3.on('pageerror', e => errs.push(e.message));
+  await p3.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await p3.waitForTimeout(600);
+  const pc = await p3.evaluate(() => {
+    const fy = G3.state.fy, T = G3.totals(G3.lines(fy), G3.funding(fy), 'tdp'), exp = G3.mods.sof.expected(fy, 'tdp');
+    const pill = document.querySelector('#page-sof .kpi.tex .pill'), pctTxt = document.querySelector('#page-sof .kpi.tex .sub').textContent;
+    const r = G3.parseWorkbook('c.xlsx', [{ name: 'S', aoa: [['Pay Group', 'Internal Order', 'Entry Type', 'Amount'], ['10010', 'NG7U01', 'Commitment', -100], ['10010', 'NG7U01', 'Commitment', 20], ['10010', 'NG7U01', 'Obligation', 300], ['10010', 'NG7U02', 'Obligation', 50]] }])[0];
+    location.hash = '#/ulo'; G3.refresh();
+    const heads = [...document.querySelectorAll('#page-ulo table.ulo thead th')].map(t => t.textContent);
+    return { pill: pill && pill.textContent, want: G3.pace(T.od / T.level, exp.v).t, withCommit: G3.pace(T.pctx, exp.v).t, pctTxt, pctx: G3.pct(T.pctx), od: T.od, commit: T.commit,
+      obl: G3.data.dpcLines.filter(x => x.type === 'oblig'), r: r.rows.map(x => x.type + ':' + x.amt).join(','), heads, acctSel: !!document.querySelector('#page-ulo select[data-ui="acct"]') };
+  });
+  ok(pc.pill === pc.want && pc.pctTxt.indexOf(pc.pctx) === 0 && pc.commit > 0, 'pace uses obligations + disbursements only (' + pc.pill + '; with commitments it would be ' + pc.withCommit + '); % executed still includes commitments (' + pc.pctx + ')');
+  ok(pc.obl.length && pc.obl.every(x => x.amt > 0) && pc.r === 'commit:100,commit:-20,oblig:300,oblig:50', 'spending by DPC: obligations positive; sign set per entry type (negative or positive source) -> ' + pc.r);
+  ok(pc.heads.indexOf('Account') < 0 && !pc.acctSel, 'Unliquidated has no Account column or filter (' + pc.heads.join(', ') + ')');
+  // ---- realistic (messy) export + key: actuals populate under All and per pay group ----
+  const clean = await p3.evaluate(() => { const fy = '2027'; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.pg = '10010'; const T1 = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.pg = 'All';
+    return { od: Math.round(T.od), tdp: T.tdp, od10: Math.round(T1.od), tdp10: T1.tdp, idt: Math.round(G3.programCalc('idt', fy).spent), rows: G3.data.sets.export.rows.length }; });
+  const real = [path.join(__dirname, 'samples', 'realistic', 'G3 Master Key (realistic).xlsx'), path.join(__dirname, 'samples', 'realistic', 'Status of Funds export (realistic).xlsx')];
+  await p3.setInputFiles('#fileInput', real); await p3.waitForFunction(() => G3.data.source === 'file', null, { timeout: 15000 }); await p3.waitForTimeout(800);
+  const m = await p3.evaluate(() => { const fy = G3.state.fy; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.pg = '10010'; const T1 = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.pg = 'All';
+    location.hash = '#/spend'; G3.refresh(); const sp = G3.mods.spend.calc ? null : null;
+    location.hash = '#/sof'; G3.refresh(); const kOb = document.querySelector('#page-sof .kpi.obl .val').textContent;
+    G3.renderDrawer(); const dr = document.getElementById('tFiles').textContent;
+    return { fy, kinds: Object.keys(G3.data.sets), od: Math.round(T.od), tdp: T.tdp, od10: Math.round(T1.od), tdp10: T1.tdp, idt: Math.round(G3.programCalc('idt', fy).spent), rows: G3.data.sets.export.rows.length, unm: G3.data.diag.export.unmapped, kOb, dr: /obligations \+ disbursements loaded/.test(dr), notes: G3.data.sets.export.report };
+  });
+  console.log(JSON.stringify({ clean, m: Object.assign({}, m, { notes: undefined }) }));
+  ok(m.kinds.indexOf('export') >= 0 && m.kinds.indexOf('acctkey') >= 0 && m.rows === clean.rows && m.unm === 0, 'realistic export (title row, header variants, text amounts, FY27/P02, messy FAs and account names) loads all ' + m.rows + ' rows, $0 unmapped');
+  ok(m.od === clean.od && m.od > 0 && m.tdp === clean.tdp && m.kOb !== '$0', 'realistic export: actuals under All match the clean export (' + m.od + ')');
+  ok(m.od10 === clean.od10 && m.od10 > 0 && m.tdp10 === clean.tdp10 && m.idt === clean.idt && m.idt > 0, 'realistic export: pay group 10010 and the IDT tab populate (' + m.od10 + ', IDT ' + m.idt + ')');
+  ok(m.dr, 'data panel shows $ loaded / $ unmapped per dataset');
   ok(errs.length === 0, 'no console errors ' + JSON.stringify(errs));
   await b.close();
 })();

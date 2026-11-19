@@ -22,4 +22,4 @@ One **Upload data** button takes any mix of files; each is recognised by its hea
 
 `samples/` holds sample files of every type (fictional); `node tools/make-samples.js` regenerates them; `node verify.js` checks the math and the upload round trip.
 
-Pay group = first 5 characters of a Functional Area when all digits (100101B3PRAT → 10010); each account takes its Functional Areas' pay group, so TDP/AFP/Allotment add up per pay group. `node perf.js` times common interactions (SCALE=20 THROTTLE=4 for a heavy-data / slow-laptop run).
+Pay group = first 5 characters of a Functional Area when all digits (100101B3PRAT → 10010); each account takes its Functional Areas' pay group, so TDP/AFP/Allotment add up per pay group. Spending maps by account first (Functional Area → Account); pay group is only a filter. Pace uses obligations + disbursements only. `samples/realistic/` has a messy export (title row, header variants, text amounts) that verify.js proves loads identically. `node perf.js` times common interactions (SCALE=20 THROTTLE=4 for a heavy-data / slow-laptop run).

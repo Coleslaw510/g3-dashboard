@@ -136,4 +136,24 @@
       { name: "G3 Spend Plan FY27.xlsx", sheets: [{ name: "Spend Plan", aoa: sp }] }
     ];
   };
+
+  // The same test data written the way real exports often look: a title row above the headers, header variants, amounts as text
+  // ("($1,234.56)", "1,234.56-", "$-12.00"), fiscal year "FY27", period "P02", Functional Areas in lower case with stray spaces,
+  // account names with different case / trailing spaces, blank rows. Used by verify.js and written to samples/realistic/.
+  G3.makeMessyFiles = function () {
+    var F = G3.makeTestFiles(), key = F[0], ex = F[1].sheets[0].aoa;
+    var fmtAmt = function (v, i) { var a = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); if (v >= 0) return i % 3 ? a : "$" + a; return i % 3 === 0 ? "(" + "$" + a + ")" : i % 3 === 1 ? a + "-" : "$-" + a; };
+    var out = [["Status of Funds - Funds Execution Detail (GFEBS)"], [], ["Contract Doc No", "Commitment Item (FIPEX)", "Functional Area (FAREA)", "Appropriation Type", "Fiscal Year", "Fiscal Period", "Obligation Amt Cum", "Total Expenditure", "Disbursements"]];
+    ex.slice(1).forEach(function (r, i) {
+      if (i % 50 === 25) out.push([]);
+      out.push([r[0], r[1], " " + String(r[2]).toLowerCase() + "  ", r[3], "FY" + String(r[4]).slice(2), "P" + ("0" + r[5]).slice(-2), fmtAmt(r[6] - r[7], i), fmtAmt(r[6], i), fmtAmt(r[7], i + 1)]);
+    });
+    var mk = key.sheets.map(function (sh) {
+      var a = sh.aoa.map(function (r) { return r.slice(); });
+      if (sh.name === "Accounts") { a[0] = ["FA", "Account Name"]; a.slice(1).forEach(function (r) { r[0] = String(r[0]).toLowerCase(); r[1] = String(r[1]).toLowerCase() + "  "; }); }
+      if (sh.name === "Funding") { a[0] = a[0].map(function (h) { return h === "Account" ? "Acct" : h; }); a.slice(1).forEach(function (r) { r[1] = "$" + Number(r[1]).toLocaleString("en-US"); r[2] = Number(r[2]).toLocaleString("en-US"); }); }
+      return { name: sh.name, aoa: a };
+    });
+    return [{ name: "G3 Master Key (realistic).xlsx", sheets: mk }, { name: "Status of Funds export (realistic).xlsx", sheets: [{ name: "Sheet1", aoa: out }] }];
+  };
 })(window);
