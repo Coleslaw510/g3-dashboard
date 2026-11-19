@@ -67,7 +67,9 @@
   function kn(v) { var s = idText(v).toUpperCase().replace(/\s+/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
   // Functional Area join key: letters and digits only, upper case (drops spaces, non-breaking/zero-width characters, dashes, a trailing *); leading zeros ignored when all digits
   function fk(v) { var s = idText(v).toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
-  function an(v) { return txt(v).replace(/\s+/g, " ").toUpperCase(); }
+  // Account join key, used by EVERY key tab and report (Funding, Accounts, DPC, Spend Plan, plan Account column, commitments Account column):
+  // case, repeated/odd spaces, hidden characters and spacing around / - & are ignored ("Oss Ops / Training" = "OSS OPS/TRAINING")
+  function an(v) { return txt(v).replace(/[\u200b-\u200d\u2060\ufeff]/g, "").replace(/\s+/g, " ").replace(/\s*([\/&\-])\s*/g, "$1").trim().toUpperCase(); }
   function dateIso(v) {
     if (blankish(v)) return "";
     if (v instanceof Date) return v.getFullYear() + "-" + ("0" + (v.getMonth() + 1)).slice(-2) + "-" + ("0" + v.getDate()).slice(-2);
@@ -365,6 +367,10 @@
     var dpcMap = {}; d.dpcs = [];
     rows("dpckey").forEach(function (r) { var ac = r.acct ? addAcct(r.acct) : ""; var k = kn(r.dpc); if (dpcMap[k]) return; dpcMap[k] = { code: r.dpc, name: r.desc || r.dpc, account: ac, tdc: r.tdc || "No TDC" }; d.dpcs.push(dpcMap[k]); });
     var prioMap = {}; rows("spkey").forEach(function (r) { prioMap[an(r.prio)] = addAcct(r.acct); });
+    // account cross-check: which key tabs name each account (they all join on the account name)
+    var xtab = { fundkey: "Funding", acctkey: "Accounts", dpckey: "DPC", spkey: "Spend Plan" }, xs = {}, loadedTabs = Object.keys(xtab).filter(function (k) { return S[k]; });
+    loadedTabs.forEach(function (k) { rows(k).forEach(function (r) { var a = an(r.acct); if (!a) return; var o = xs[a] || (xs[a] = { name: names[a] || r.acct, tabs: {}, spell: {} }); o.tabs[xtab[k]] = 1; o.spell[txt(r.acct)] = 1; }); });
+    d.acctCross = { tabs: loadedTabs.map(function (k) { return xtab[k]; }), rows: Object.keys(xs).map(function (a) { var o = xs[a]; return { name: o.name, on: Object.keys(o.tabs), missing: loadedTabs.map(function (k) { return xtab[k]; }).filter(function (t) { return !o.tabs[t]; }), spellings: Object.keys(o.spell) }; }) };
     d.ciMap = {}; rows("cikey").forEach(function (r) { if (!d.ciMap[kn(r.ci)]) d.ciMap[kn(r.ci)] = r.desc; });
     var hasCi = !!S.cikey;
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }

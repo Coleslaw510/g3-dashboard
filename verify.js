@@ -206,6 +206,29 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(mp.exp === '100101B1PRID>IDT 100101B1PRID>IDT 100101B1PRDR>IDT 100701B1PRAT>AT 100991B1PRZZ>Unmapped', '2060 export lines map: 100101B1PRID / 100101B1PRDR via key FA 100101B1PR (prefix), 100701B1PRAT despite hidden characters on the key (' + mp.exp + ')');
   ok(mp.com === '100101B1PRID>IDT:264000 100101B1PRID>IDT:118250 100701B1PRAT>AT:51000 100991B1PRZZ>Unmapped:9000', 'commitments-report 2060 obligation rows with no Internal Order map by Functional Area, shown positive (' + mp.com + ')');
   ok(mp.top[0] && /^100991B1PRZZ \$34000 ~/.test(mp.top[0]) && mp.hasTable && mp.hasHow && mp.how.export.prefix >= 3 && mp.how.commit.exact + mp.how.commit.prefix >= 3, 'data panel: top unmapped Functional Areas with $ and closest key FA (' + mp.top[0] + '), and how rows mapped');
+  // ---- SOF export math (Cole): commitment_amt_cum = Total Expenditure, disbursement_amt_cum = Disbursement, Obligation = TE - Disb; never commitments ----
+  const sm = await p3.evaluate(() => {
+    const r = G3.parseWorkbook('x.xlsx', [{ name: 'S', aoa: [['contract_doc_no', 'commitment_item_fipex', 'functional_area_farea', 'appropriation_type', 'fiscal_year', 'fiscal_month', 'obligation_amt_cum', 'commitment_amt_cum', 'disbursement_amt_cum'],
+      ['D1', '21TD', '100101B3PIDT', '2060', 2027, 1, -999999, -1000, -400], ['D2', 'ALLOBJ', '100101B3PIDT', '2060', 2027, 1, 0, -5000, 0]] }])[0];
+    location.hash = '#/sof'; G3.refresh();
+    return { kind: r.kind, row: r.rows.map(x => x.te + '/' + x.oblig + '/' + x.disb).join(','), n: r.rows.length, exportCommit: G3.data.lines.filter(l => l.src === 'export').reduce((t, l) => t + l.commit, 0) };
+  });
+  ok(sm.kind === 'export' && sm.row === '1000/600/400' && sm.n === 1 && sm.exportCommit === 0, 'SOF export: TE = -commitment_amt_cum (1000), Disb = -disbursement_amt_cum (400), Obligation = TE - Disb (600); obligation_amt_cum ignored; ALLOBJ dropped; export adds $0 to commitments');
+  // ---- keys join on account name across tabs (case / spacing / hidden characters) + account cross-check ----
+  const p6 = await ctx.newPage(); p6.on('pageerror', e => errs.push(e.message)); await p6.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await p6.waitForTimeout(500);
+  const kj = await p6.evaluate(() => {
+    const fy = G3.state.fy, before = {}; G3.data.accounts.forEach(a => { before[a.id] = Math.round(G3.planMonths(G3.plans(fy, p => p.account === a.id)).reduce((x, y) => x + y, 0)); });
+    G3.data.sets.spkey.rows.forEach(r => { r.acct = ' ' + r.acct.toLowerCase().replace('/', ' / ') + '\u200b '; });
+    G3.data.sets.dpckey.rows.push({ dpc: 'NGOR01', desc: 'Orphan DPC', acct: 'ORPHAN ACCT', tdc: 'X' });
+    G3.derive(); G3.renderDrawer();
+    const after = {}; G3.data.accounts.forEach(a => { after[a.id] = Math.round(G3.planMonths(G3.plans(fy, p => p.account === a.id)).reduce((x, y) => x + y, 0)); });
+    const idt = G3.programCalc('idt', fy), html = document.getElementById('dUnmapped').innerHTML;
+    return { same: Object.keys(before).every(k => before[k] === after[k]), unm: Object.keys(G3.data.unmapped.prio).length, idtPlan: Math.round(idt.planTD), idtSpent: Math.round(idt.spent), idtTdp: idt.tdp,
+      miss: G3.data.acctCross.rows.filter(r => r.missing.length).map(r => r.name + ':' + r.missing.join('/')), cross: /Account cross-check/.test(html) && /ORPHAN ACCT/.test(html) };
+  });
+  console.log(JSON.stringify(kj));
+  ok(kj.same && kj.unm === 0 && kj.idtPlan > 0 && kj.idtSpent > 0 && kj.idtTdp > 0, 'Spend Plan tab accounts in different case / spacing / hidden characters still join: prioritization -> account <- Functional Area / funding (IDT plan ' + kj.idtPlan + ', spent ' + kj.idtSpent + ')');
+  ok(kj.cross && kj.miss.join(',') === 'ORPHAN ACCT:Funding/Accounts/Spend Plan', 'account cross-check lists accounts missing from other key tabs (' + kj.miss.join(',') + ')');
   ok(errs.length === 0, 'no console errors ' + JSON.stringify(errs));
   await b.close();
 })();

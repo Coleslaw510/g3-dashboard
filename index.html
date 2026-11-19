@@ -859,7 +859,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function kn(v) { var s = idText(v).toUpperCase().replace(/\s+/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
   // Functional Area join key: letters and digits only, upper case (drops spaces, non-breaking/zero-width characters, dashes, a trailing *); leading zeros ignored when all digits
   function fk(v) { var s = idText(v).toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
-  function an(v) { return txt(v).replace(/\s+/g, " ").toUpperCase(); }
+  // Account join key, used by EVERY key tab and report (Funding, Accounts, DPC, Spend Plan, plan Account column, commitments Account column):
+  // case, repeated/odd spaces, hidden characters and spacing around / - & are ignored ("Oss Ops / Training" = "OSS OPS/TRAINING")
+  function an(v) { return txt(v).replace(/[\u200b-\u200d\u2060\ufeff]/g, "").replace(/\s+/g, " ").replace(/\s*([\/&\-])\s*/g, "$1").trim().toUpperCase(); }
   function dateIso(v) {
     if (blankish(v)) return "";
     if (v instanceof Date) return v.getFullYear() + "-" + ("0" + (v.getMonth() + 1)).slice(-2) + "-" + ("0" + v.getDate()).slice(-2);
@@ -1157,6 +1159,10 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var dpcMap = {}; d.dpcs = [];
     rows("dpckey").forEach(function (r) { var ac = r.acct ? addAcct(r.acct) : ""; var k = kn(r.dpc); if (dpcMap[k]) return; dpcMap[k] = { code: r.dpc, name: r.desc || r.dpc, account: ac, tdc: r.tdc || "No TDC" }; d.dpcs.push(dpcMap[k]); });
     var prioMap = {}; rows("spkey").forEach(function (r) { prioMap[an(r.prio)] = addAcct(r.acct); });
+    // account cross-check: which key tabs name each account (they all join on the account name)
+    var xtab = { fundkey: "Funding", acctkey: "Accounts", dpckey: "DPC", spkey: "Spend Plan" }, xs = {}, loadedTabs = Object.keys(xtab).filter(function (k) { return S[k]; });
+    loadedTabs.forEach(function (k) { rows(k).forEach(function (r) { var a = an(r.acct); if (!a) return; var o = xs[a] || (xs[a] = { name: names[a] || r.acct, tabs: {}, spell: {} }); o.tabs[xtab[k]] = 1; o.spell[txt(r.acct)] = 1; }); });
+    d.acctCross = { tabs: loadedTabs.map(function (k) { return xtab[k]; }), rows: Object.keys(xs).map(function (a) { var o = xs[a]; return { name: o.name, on: Object.keys(o.tabs), missing: loadedTabs.map(function (k) { return xtab[k]; }).filter(function (t) { return !o.tabs[t]; }), spellings: Object.keys(o.spell) }; }) };
     d.ciMap = {}; rows("cikey").forEach(function (r) { if (!d.ciMap[kn(r.ci)]) d.ciMap[kn(r.ci)] = r.desc; });
     var hasCi = !!S.cikey;
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
@@ -1571,6 +1577,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var fh = d.faHow || {}, fhs = Object.keys(fh).map(function (ds) { var o = fh[ds]; return "<strong>" + esc(G3.KIND_LABEL[ds] || ds) + ":</strong> " + [["exact", "exact FA"], ["prefix", "key FA is the start of the FA"], ["reverse", "FA is the start of a key FA"], ["dpc", "Internal Order (DPC tab)"], ["acct", "report Account column"]].filter(function (x) { return o[x[0]]; }).map(function (x) { return G3.num(o[x[0]]) + " " + x[1]; }).join(", "); });
     if (fhs.length) um = '<p class="muted">How rows mapped to an account &mdash; ' + fhs.join(" &middot; ") + "</p>" + um;
     G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps.</p>';
+    var xc = d.acctCross;
+    if (xc && xc.tabs.length > 1) {
+      var miss = xc.rows.filter(function (r) { return r.missing.length; }), vars = xc.rows.filter(function (r) { return r.spellings.length > 1; });
+      G3.$("dUnmapped").innerHTML += '<p><strong>Account cross-check</strong> (key tabs join on the account name, ignoring case, spacing and hidden characters; checked: ' + xc.tabs.join(", ") + "): " +
+        (miss.length ? '</p><table class="dtable small tufa"><thead><tr><th>Account</th><th>On</th><th>Missing from</th></tr></thead><tbody>' + miss.map(function (r) { return "<tr><td><code>" + esc(r.name) + "</code></td><td>" + esc(r.on.join(", ")) + '</td><td class="warn">' + esc(r.missing.join(", ")) + "</td></tr>"; }).join("") + "</tbody></table>" : '<span class="ok">every account is on every tab.</span></p>') +
+        (vars.length ? '<p class="muted">Joined despite different spelling: ' + vars.map(function (r) { return r.spellings.map(function (x) { return "<code>" + esc(x) + "</code>"; }).join(" = "); }).join(" &middot; ") + "</p>" : "");
+    }
     var cfl = d.pgConflicts || [];
     G3.$("dUnmapped").innerHTML += "<p><strong>Account pay groups</strong> (first 5 digits of each account\u2019s Functional Areas): " + (d.accounts || []).filter(function (a) { return a.id !== "Unmapped"; }).map(function (a) { return esc(a.name) + " <code>" + (d.acctPg[a.id] || "none") + "</code>"; }).join(" &middot; ") + "</p>" +
       (cfl.length ? '<p class="warn"><strong>Key conflicts:</strong> ' + cfl.map(function (x) { return esc(x.name) + " has Functional Areas in " + x.pgs.map(function (p) { return p || "no pay group (131\u2026)"; }).join(" and ") + "; counted under " + (x.used || "no pay group"); }).join("; ") + ".</p>" : "");

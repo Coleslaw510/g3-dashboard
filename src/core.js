@@ -291,6 +291,13 @@
     var fh = d.faHow || {}, fhs = Object.keys(fh).map(function (ds) { var o = fh[ds]; return "<strong>" + esc(G3.KIND_LABEL[ds] || ds) + ":</strong> " + [["exact", "exact FA"], ["prefix", "key FA is the start of the FA"], ["reverse", "FA is the start of a key FA"], ["dpc", "Internal Order (DPC tab)"], ["acct", "report Account column"]].filter(function (x) { return o[x[0]]; }).map(function (x) { return G3.num(o[x[0]]) + " " + x[1]; }).join(", "); });
     if (fhs.length) um = '<p class="muted">How rows mapped to an account &mdash; ' + fhs.join(" &middot; ") + "</p>" + um;
     G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps.</p>';
+    var xc = d.acctCross;
+    if (xc && xc.tabs.length > 1) {
+      var miss = xc.rows.filter(function (r) { return r.missing.length; }), vars = xc.rows.filter(function (r) { return r.spellings.length > 1; });
+      G3.$("dUnmapped").innerHTML += '<p><strong>Account cross-check</strong> (key tabs join on the account name, ignoring case, spacing and hidden characters; checked: ' + xc.tabs.join(", ") + "): " +
+        (miss.length ? '</p><table class="dtable small tufa"><thead><tr><th>Account</th><th>On</th><th>Missing from</th></tr></thead><tbody>' + miss.map(function (r) { return "<tr><td><code>" + esc(r.name) + "</code></td><td>" + esc(r.on.join(", ")) + '</td><td class="warn">' + esc(r.missing.join(", ")) + "</td></tr>"; }).join("") + "</tbody></table>" : '<span class="ok">every account is on every tab.</span></p>') +
+        (vars.length ? '<p class="muted">Joined despite different spelling: ' + vars.map(function (r) { return r.spellings.map(function (x) { return "<code>" + esc(x) + "</code>"; }).join(" = "); }).join(" &middot; ") + "</p>" : "");
+    }
     var cfl = d.pgConflicts || [];
     G3.$("dUnmapped").innerHTML += "<p><strong>Account pay groups</strong> (first 5 digits of each account\u2019s Functional Areas): " + (d.accounts || []).filter(function (a) { return a.id !== "Unmapped"; }).map(function (a) { return esc(a.name) + " <code>" + (d.acctPg[a.id] || "none") + "</code>"; }).join(" &middot; ") + "</p>" +
       (cfl.length ? '<p class="warn"><strong>Key conflicts:</strong> ' + cfl.map(function (x) { return esc(x.name) + " has Functional Areas in " + x.pgs.map(function (p) { return p || "no pay group (131\u2026)"; }).join(" and ") + "; counted under " + (x.used || "no pay group"); }).join("; ") + ".</p>" : "");
