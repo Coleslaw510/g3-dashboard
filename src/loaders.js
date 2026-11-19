@@ -95,7 +95,7 @@
     ["supplier", "Supplier", ["vendor"]], ["hdr", "Document Header Text", ["documentheadertext", "headertext"]], ["by", "Created by", ["createdby"]],
     ["openlc", "Amount Open (LC)", ["amountopenlc"]], ["refitem", "Reference item", []], ["cust", "Customer", []], ["wbs", "WBS element", ["wbs"]], ["cur", "Currency", []],
     ["cocd", "Company Code", []], ["ci", "Commitment item", ["commitmentitem"]], ["text", "Text", []]];
-  var FUND_COLS = [["fy", "Fiscal Year", ["fiscalyear", "fy"]], ["acct", "Account", ACCT_AL], ["tdp", "TDP", []], ["afp", "AFP", []], ["allot", "Allotment", ["allotment", "allot"]], ["sag", "SAG", []], ["mdep", "MDEP", []]];
+  var FUND_COLS = [["fy", "Fiscal Year", ["fiscalyear", "fy"]], ["acct", "Account", ACCT_AL], ["tdp", "TDP", []], ["afp", "AFP", []], ["allot", "Allotment", ["allotment", "allot", "allotted", "allotmentamt", "allotmentamount", "allotments"]], ["sag", "SAG", []], ["mdep", "MDEP", []]];
   var AKEY_COLS = [["fa", "Functional Area", FA_AL], ["acct", "Account", ACCT_AL], ["sag", "Sag", []], ["mdep", "MDEP", []]];
   var DKEY_COLS = [["dpc", "DPC", ["dpc", "internalorder", "dpccode"]], ["desc", "Description", ["description", "desc", "dpcdescription"]], ["acct", "Account", ACCT_AL], ["tdc", "TDC", ["tdc"]]];
   var SKEY_COLS = [["prio", "Prioritization", ["prioritization", "priority", "prioritisation"]], ["acct", "Account", ACCT_AL]];
@@ -142,7 +142,7 @@
     var hm = mapHeaders(src, A.export), map = hm.map, rep = rep0("export", hm);
     if (map.ci == null) { rep.fatal = "No Commitment Item column (commitment_item_fipex) was found."; return { rows: [], report: rep }; }
     if (map.com == null || map.disb == null) { rep.fatal = "Missing commitment_amt_cum or disbursement_amt_cum; both are needed to calculate Obligation."; return { rows: [], report: rep }; }
-    rep.hasPg = map.pg != null; rep.hasDpc = map.dpc != null;
+    rep.hasPg = map.pg != null || map.fa != null; rep.hasDpc = map.dpc != null;
     var rows = rowsOf(src, hm, function (raw, rn) {
       if (isAllobj(raw.ci)) { skip(rep, "ALLOBJ lines removed"); return null; }
       var fm = "fm" in raw ? fmNum(raw.fm) : null; if (fm !== null && isNaN(fm)) { skip(rep, "unreadable fiscal month (kept, no month)"); fm = null; }
@@ -150,7 +150,7 @@
       if (isNaN(com)) com = null; if (isNaN(disb)) disb = null;
       if (FLIP_EXPORT_SIGN) { if (com) com = -com; if (disb) disb = -disb; }
       var obl = Math.round(((com || 0) - (disb || 0)) * 100) / 100;          // Obligation = Total Expenditure - Disbursement
-      return { doc: idText(raw.doc), ci: idText(raw.ci), fa: idText(raw.fa), appn: idText(raw.appn), fy: fyText(raw.fy), fm: fm, te: com || 0, oblig: obl, disb: disb || 0, pg: idText(raw.pg), dpc: idText(raw.dpc) };
+      return { doc: idText(raw.doc), ci: idText(raw.ci), fa: idText(raw.fa), appn: idText(raw.appn), fy: fyText(raw.fy), fm: fm, te: com || 0, oblig: obl, disb: disb || 0, pg: idText(raw.pg) || G3.pgFromFa(raw.fa), dpc: idText(raw.dpc) };
     }, rep);
     if (FLIP_EXPORT_SIGN) rep.notes.push("Signs flipped; Obligation = Total Expenditure \u2212 Disbursement (Aviation rule)");
     return { rows: rows, report: rep };
@@ -158,19 +158,21 @@
   P.commit = function (src) {
     var hm = mapHeaders(src, A.commit), map = hm.map, rep = rep0("commit", hm);
     if (map.et == null || map.amt == null) { rep.fatal = "A commitments report needs Entry Type and Amount columns."; return { rows: [], report: rep }; }
-    rep.positive = 0; rep.nCommit = 0; rep.nOblig = 0;
+    rep.positive = 0; rep.nCommit = 0; rep.nOblig = 0; rep.pgFromFa = 0;
     var rows = rowsOf(src, hm, function (raw) {
       var et = txt(raw.et), type = /commit/i.test(et) ? "commit" : /oblig/i.test(et) ? "oblig" : null;
       if (!type) { skip(rep, "other entry types ignored" + (et ? "" : " (blank)")); return null; }
       var a = parseAmt(raw.amt); if (a == null || isNaN(a)) { skip(rep, "blank or unreadable amount"); return null; }
       if (a > 0) rep.positive++;
       if (type === "commit") rep.nCommit++; else rep.nOblig++;
-      return { type: type, pg: idText(raw.pg), dpc: idText(raw.io), rptAcct: txt(raw.acct), amt: FLIP_COMMIT_SIGN ? -a : a, sdn: idText(raw.sdn), fp: txt(raw.fp), fc: idText(raw.fc), fund: idText(raw.fund), wbs: idText(raw.wbs), cc: idText(raw.cc), et: et };
+      var pgc = idText(raw.pg), fa = idText(raw.fa); if (!pgc && G3.pgFromFa(fa)) rep.pgFromFa++;
+      return { type: type, pg: pgc || G3.pgFromFa(fa), fa: fa, dpc: idText(raw.io), rptAcct: txt(raw.acct), amt: FLIP_COMMIT_SIGN ? -a : a, sdn: idText(raw.sdn), fp: txt(raw.fp), fc: idText(raw.fc), fund: idText(raw.fund), wbs: idText(raw.wbs), cc: idText(raw.cc), et: et };
     }, rep);
     rep.notes.push(rep.nCommit + " commitment rows (count toward execution in TDP view)");
     rep.notes.push(rep.nOblig + " obligation rows loaded for spending-by-DPC tracking only (not added to totals; Status of Funds already counts obligations)");
     if (rep.positive) rep.notes.push(rep.positive + " rows had positive amounts (become negative after the flip, e.g. reversals)");
-    rep.notes.push("Functional Area and Journal Date on this report are ignored");
+    rep.notes.push(map.pg != null ? "Pay Group column used" + (rep.pgFromFa ? "; " + rep.pgFromFa + " blank pay groups filled from Functional Area" : "") : "No Pay Group column: pay group taken from the first 5 digits of Functional Area");
+    rep.notes.push("Journal Date ignored (commitments are upcoming, with no working date)");
     return { rows: rows, report: rep };
   };
   P.fmz3 = function (src) {
@@ -185,19 +187,23 @@
         supplier: txt(raw.supplier), hdr: txt(raw.hdr), by: txt(raw.by), wbs: idText(raw.wbs), ci: txt(raw.ci), text: txt(raw.text), traveler: trav };
     }, rep);
     var nt = rows.filter(function (r) { return r.traveler; }).length; if (nt) rep.notes.push(nt + " DTS traveler names cleaned from Document Header Text");
-    rep.notes.push("Days open = as-of date \u2212 Posting Date; no Pay Group on this report");
+    rep.notes.push("Days open = as-of date \u2212 Posting Date; pay group = first 5 digits of Functional Area");
     return { rows: rows, report: rep };
   };
   P.fundkey = function (src) {
     var hm = mapHeaders(src, A.fundkey), map = hm.map, rep = rep0("fundkey", hm);
     if (map.acct == null) { rep.fatal = "The funding key needs an Account column."; return { rows: [], report: rep }; }
+    if (map.allot == null && map.afp != null && map.afp + 1 < src.cols) {
+      var used = Object.keys(map).map(function (k) { return map[k]; }), nx = map.afp + 1, hv = src.get(hm.hi, nx);
+      if (used.indexOf(nx) < 0) { map.allot = nx; rep.notes.push("Allotment read from the column right of AFP" + (hv != null && txt(hv) !== "" ? ' ("' + txt(hv) + '")' : " (no header)")); }
+    }
     rep.hasAllot = map.allot != null;
     var rows = rowsOf(src, hm, function (raw) {
       var ac = txt(raw.acct).replace(/\s+/g, " "); if (!ac) { skip(rep, "no Account"); return null; } if (/^total/i.test(ac)) { skip(rep, "total rows"); return null; }
       var f = function (k) { var x = parseAmt(raw[k]); return x == null || isNaN(x) ? 0 : x; };
       return { acct: ac, fy: fyText(raw.fy), tdp: f("tdp"), afp: f("afp"), allot: map.allot != null ? f("allot") : null, sag: idText(raw.sag), mdep: idText(raw.mdep) };
     }, rep);
-    if (!rep.hasAllot) rep.notes.push("No Allotment column, so the Allotment view is off. Add an Allotment column to turn it on.");
+    if (!rep.hasAllot) rep.notes.push("No Allotment column, so the Allotment view is off. Put Allotment right of AFP to turn it on.");
     return { rows: rows, report: rep };
   };
   P.acctkey = function (src) {
@@ -275,6 +281,9 @@
     }
     return null;
   };
+  // Pay group = first 5 characters of the Functional Area when all 5 are digits (100101B3PRAT -> 10010).
+  // Anything else (e.g. 131G48ASDF) is another appropriation: no pay group ("").
+  G3.pgFromFa = function (fa) { var m = String(fa == null ? "" : fa).trim().match(/^(\d{5})/); return m ? m[1] : ""; };
   G3.derive = function () {
     var d = G3.data, S = d.sets, cur = G3.fyOf(G3.asOf()), curFm = (G3.asOf().getMonth() + 3) % 12 + 1;
     var rows = function (k) { return S[k] ? S[k].rows : []; };
@@ -283,6 +292,10 @@
     var faMap = {}, info = {};
     rows("fundkey").forEach(function (r) { addAcct(r.acct); });
     rows("acctkey").forEach(function (r) { var ac = addAcct(r.acct); if (!faMap[kn(r.fa)]) faMap[kn(r.fa)] = ac; });
+    // pay groups per account, from the Functional Areas mapped to it on the Accounts tab
+    var acctPgs = {}; rows("acctkey").forEach(function (r) { var k = an(r.acct), o = acctPgs[k] || (acctPgs[k] = {}); o[G3.pgFromFa(r.fa)] = 1; });
+    // funding pay group: the one pay group an account maps to; "" if it only has non-pay-group FAs; null (= shown under every pay group) if it spans several
+    function fundPg(ac) { var o = acctPgs[an(ac)]; if (!o) return null; var k = Object.keys(o); return k.length === 1 ? k[0] : null; }
     var dpcMap = {}; d.dpcs = [];
     rows("dpckey").forEach(function (r) { var ac = r.acct ? addAcct(r.acct) : ""; var k = kn(r.dpc); if (dpcMap[k]) return; dpcMap[k] = { code: r.dpc, name: r.desc || r.dpc, account: ac, tdc: r.tdc || "No TDC" }; d.dpcs.push(dpcMap[k]); });
     var prioMap = {}; rows("spkey").forEach(function (r) { prioMap[an(r.prio)] = addAcct(r.acct); });
@@ -290,12 +303,12 @@
     function acctFa(fa, bucket) { var a = faMap[kn(fa)]; if (a) return a; if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
     // funding (no Fiscal Year column = current fiscal year)
     d.funding = []; var hasAllot = false;
-    rows("fundkey").forEach(function (r) { if (r.allot != null) hasAllot = true; d.funding.push({ fy: r.fy || cur, account: names[an(r.acct)], pg: "", tdp: r.tdp, afp: r.afp, allot: r.allot || 0, sag: r.sag, mdep: r.mdep }); info[an(r.acct)] = { sag: r.sag, mdep: r.mdep }; });
+    rows("fundkey").forEach(function (r) { if (r.allot != null) hasAllot = true; d.funding.push({ fy: r.fy || cur, account: names[an(r.acct)], pg: fundPg(r.acct), tdp: r.tdp, afp: r.afp, allot: r.allot || 0, sag: r.sag, mdep: r.mdep }); info[an(r.acct)] = { sag: r.sag, mdep: r.mdep }; });
     rows("acctkey").forEach(function (r) { var i = info[an(r.acct)] || (info[an(r.acct)] = {}); if (!i.sag && r.sag) i.sag = r.sag; if (!i.mdep && r.mdep) i.mdep = r.mdep; });
     d.hasAllot = hasAllot; d.acctInfo = info;
     // execution lines: export (obligations / disbursements) + commitments (commitments report, current FY)
     d.lines = [];
-    rows("export").forEach(function (r) { d.lines.push({ fy: r.fy || cur, fm: r.fm || curFm, account: acctFa(r.fa, unm.fa), pg: r.pg, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
+    rows("export").forEach(function (r) { d.lines.push({ fy: r.fy || cur, fm: r.fm || curFm, account: acctFa(r.fa, unm.fa), pg: r.pg, fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
     // commitments report rows: commitments feed execution; obligations feed spending-by-DPC only
     d.dpcLines = [];
     rows("commit").forEach(function (r) {
@@ -303,13 +316,13 @@
       if (!m && r.dpc) unm.dpc[r.dpc] = (unm.dpc[r.dpc] || 0) + 1;
       ac = ac || UN;
       d.dpcLines.push({ type: r.type, account: ac, pg: r.pg, dpc: r.dpc, amt: r.amt, sdn: r.sdn });
-      if (r.type === "commit") d.lines.push({ fy: cur, fm: curFm, account: ac, pg: r.pg, dpc: r.dpc, doc: r.sdn, ci: "", commit: r.amt, oblig: 0, disb: 0, src: "commit" });
+      if (r.type === "commit") d.lines.push({ fy: cur, fm: null, upcoming: true, account: ac, pg: r.pg, dpc: r.dpc, doc: r.sdn, ci: "", commit: r.amt, oblig: 0, disb: 0, src: "commit" });
     });
     // spend plan: Prioritization -> Account (Spend Plan tab, or an exact account name); several prioritizations add up
     var plan = {};
     rows("plan").forEach(function (r) {
       var ac = prioMap[an(r.prio)] || names[an(r.prio)]; if (!ac) { unm.prio[r.prio] = (unm.prio[r.prio] || 0) + 1; return; }
-      var fy = r.fy || cur, key = fy + "|" + ac, p = plan[key] || (plan[key] = { fy: fy, account: ac, pg: "", m: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], prios: [] });
+      var fy = r.fy || cur, key = fy + "|" + ac, p = plan[key] || (plan[key] = { fy: fy, account: ac, pg: null, m: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], prios: [] });
       for (var i = 0; i < 12; i++) p.m[i] += r.m[i]; p.prios.push(r.prio);
     });
     d.plan = Object.keys(plan).map(function (k) { return plan[k]; });
@@ -317,19 +330,27 @@
     d.ulo = rows("fmz3").map(function (r) {
       var ac = faMap[kn(r.fa)] || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
       if (!ac) { if (r.fa) unm.fmzFa[r.fa] = (unm.fmzFa[r.fa] || 0) + 1; ac = UN; }
-      return Object.assign({}, r, { account: ac, pg: "", dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.traveler ? "DTS" : (r.ci || r.dt || "Other"), desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
+      return Object.assign({}, r, { account: ac, pg: G3.pgFromFa(r.fa), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.traveler ? "DTS" : (r.ci || r.dt || "Other"), desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
     });
     if ([d.lines, d.ulo, d.dpcLines].some(function (a) { return a.some(function (x) { return x.account === UN; }); })) addAcct(UN);
     d.accounts = accounts;
     var fys = {}; fys[cur] = 1; d.lines.forEach(function (l) { if (l.fy) fys[l.fy] = 1; }); d.funding.forEach(function (f) { fys[f.fy] = 1; });
     d.fys = Object.keys(fys).sort();
     d.unmapped = unm;
-    d.hasPg = { export: !!(S.export && S.export.report.hasPg), commit: !!S.commit };
+    d.hasPg = { export: d.lines.some(function (l) { return l.src === "export" && l.pg; }), commit: !!S.commit, fmz3: d.ulo.some(function (u) { return u.pg; }) };
+    // pay group list: the four standard ones plus any other 5-digit pay group found
+    var pgs = {}; G3.BASE_PAYGROUPS.forEach(function (p) { pgs[p] = 1; });
+    d.lines.concat(d.ulo, d.dpcLines).forEach(function (x) { if (x.pg) pgs[x.pg] = 1; });
+    G3.PAYGROUPS = Object.keys(pgs).sort();
+    var XC = ["#0891b2", "#db2777", "#65a30d", "#a16207", "#4338ca"], xi = 0; G3.PAYGROUPS.forEach(function (p) { if (!G3.PGCOL[p]) G3.PGCOL[p] = XC[xi++ % XC.length]; });
+    if (G3.state.pg !== "All" && G3.PAYGROUPS.indexOf(G3.state.pg) < 0) G3.state.pg = "All";
+    // accounts whose funding can't be split by pay group (FAs in several pay groups)
+    d.fundSplit = accounts.map(function (a) { var o = acctPgs[an(a.id)]; return { name: a.name, pgs: o ? Object.keys(o) : [] }; }).filter(function (x) { return x.pgs.length > 1; }).map(function (x) { return x.name; });
     if (d.fys.indexOf(G3.state.fy) < 0) G3.state.fy = cur;
     if (!d.hasAllot && G3.state.view === "allot") G3.state.view = "tdp";
   };
   G3.DATASET_COLS = {
-    fundkey: "Account, TDP, AFP, SAG, MDEP (optional: Allotment, Fiscal Year)",
+    fundkey: "Account, TDP, AFP, Allotment (right of AFP), SAG, MDEP (optional: Fiscal Year)",
     acctkey: "Functional Area, Account",
     dpckey: "DPC, Description, Account, TDC",
     spkey: "Prioritization, Account",

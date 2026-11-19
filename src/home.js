@@ -15,7 +15,7 @@
     var T = G3.totals(G3.lines(fy), G3.funding(fy)), exp = G3.mods.sof.expected(fy, st.view);
     var SP = G3.mods.spend.calc(fy, ""), ulo = G3.mods.ulo.rows(), uOpen = G3.sum(ulo, "open"), u90 = ulo.filter(function (r) { return r.days > 90; });
     var P = {}; ["idt", "at", "sch", "mob"].forEach(function (k) { P[k] = G3.programCalc(k, fy); });
-    var h = '<div class="hero"><div><div class="eyebrow">FY' + fy + " &middot; Day " + el.day + " of " + el.total + "</div><h1>G3 Dashboard" + G3.testTag() + '</h1><p class="lead">' + (G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) + " &middot; " : "") + "Funds, spend plans, unliquidated transactions and training spend in one place.</p>" + (st.pg !== "All" ? '<p class="muted small">Pay group ' + st.pg + " filters commitments and DPC spending only; the other reports carry no pay group.</p>" : "") +
+    var h = '<div class="hero"><div><div class="eyebrow">FY' + fy + " &middot; Day " + el.day + " of " + el.total + "</div><h1>G3 Dashboard" + G3.testTag() + '</h1><p class="lead">' + (G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) + " &middot; " : "") + "Funds, spend plans, unliquidated transactions and training spend in one place.</p>" + G3.pgNote() +
       '<div class="hctl">' + G3.viewSeg() + G3.seg("pg", [["All", "All pay groups"]].concat(G3.PAYGROUPS.map(function (p) { return [p, p]; })), st.pg) + "</div></div>" +
       '<div class="fyring">' + ring(el.frac) + '<div><div class="rv">' + G3.pct(el.frac, 0) + '</div><div class="rl">of FY' + fy + " elapsed</div></div></div></div>";
     var tiles = [

@@ -44,7 +44,10 @@
   G3.priorFy = function (fy) { return String(+fy - 1); };
 
   // ---------- filtering & aggregation ----------
-  G3.pgOk = function (pg) { return G3.state.pg === "All" || !pg || pg === G3.state.pg; };   // rows with no pay group (funding, export, plan, FMZ3) are not filterable
+  // pay group on a row: "10010" etc. = that pay group; "" = no pay group (Functional Area not 5 digits, e.g. 131G..., another appropriation: shown under All only);
+  // null = the dataset can't be split by pay group (spend plan; funding for an account whose FAs span several pay groups): shown under every pay group
+  G3.pgOk = function (pg) { return G3.state.pg === "All" || pg == null || pg === G3.state.pg; };
+  G3.pgCol = function (p) { var X = ["#0891b2", "#db2777", "#65a30d", "#a16207", "#4338ca"]; return G3.PGCOL[p] || X[Math.abs(+p || 0) % X.length]; };
   G3.acct = function (id) { for (var i = 0; i < G3.data.accounts.length; i++) if (G3.data.accounts[i].id === id) return G3.data.accounts[i]; return { id: id, name: id }; };
   G3.dpcInfo = function (code) { var k = G3.util.kn(code); for (var i = 0; i < G3.data.dpcs.length; i++) if (G3.util.kn(G3.data.dpcs[i].code) === k) return G3.data.dpcs[i]; return null; };
   G3.dpcName = function (code) { var d = G3.dpcInfo(code); return d ? d.name : ""; };
@@ -71,7 +74,7 @@
     return t;
   };
   // spend (actuals for spend plans and program pages) = obligations + disbursements, by fiscal month
-  G3.spendByFm = function (lines) { var m = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; lines.forEach(function (l) { m[l.fm - 1] += l.oblig + l.disb; }); return m; };
+  G3.spendByFm = function (lines) { var m = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; lines.forEach(function (l) { if (l.fm) m[l.fm - 1] += l.oblig + l.disb; }); return m; };
   G3.cum = function (a) { var s = 0; return a.map(function (v) { return v == null ? null : (s += v); }); };
   G3.varClass = function (v) { if (v == null || !isFinite(v)) return "na"; var a = Math.abs(v); return a <= .05 ? "g" : a <= .10 ? "y" : "r"; };
   G3.varText = function (v) { return v == null || !isFinite(v) ? "\u2014" : (v > 0 ? "+" : v < 0 ? "\u2212" : "") + Math.abs(v * 100).toFixed(1) + "%"; };
@@ -93,10 +96,15 @@
     return G3.data.hasAllot ? h : h.replace('data-v="allot"', 'data-v="allot" disabled title="Add an Allotment column to the Funding tab of the master key to use this view"');
   };
   // Pay group exists only on the commitments report (and the funds export if it carries one): say so when the filter is on
-  G3.pgNote = function () {
+  G3.pgNote = function (what) {
     if (G3.state.pg === "All") return "";
-    var none = ["funding"].concat(G3.data.hasPg.export ? [] : ["obligations & disbursements (funds export)"]).concat(["spend plan", "FMZ3"]);
-    return '<div class="pgnote">Pay group ' + G3.esc(G3.state.pg) + " is applied to commitments" + (G3.data.hasPg.export ? ", obligations and disbursements" : " and DPC obligations") + ". " + none.join(", ") + " have no pay group, so they show all pay groups.</div>";
+    var parts = ["Pay group " + G3.esc(G3.state.pg) + " = Functional Areas starting " + G3.esc(G3.state.pg) + ". Lines with a non-pay-group Functional Area (e.g. 131G\u2026) show only under All."];
+    if (what !== "ulo") {
+      var fs = G3.data.fundSplit || [];
+      if (fs.length) parts.push("TDP/AFP/Allotment for " + fs.map(G3.esc).join(", ") + " can\u2019t be split by pay group (Functional Areas in several pay groups), so their full funding level is shown.");
+      parts.push("The spend plan has no pay group and is shown in full.");
+    }
+    return '<div class="pgnote">' + parts.join(" ") + "</div>";
   };
   // spending by DPC: commitments + obligations from the commitments report (current fiscal year only)
   G3.dpcRollup = function (fy, filter) {
@@ -243,6 +251,8 @@
     var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"]];
     var um = lists.filter(function (l) { return u[l[0]] && Object.keys(u[l[0]]).length; }).map(function (l) { return "<p><strong>" + l[1] + ":</strong> " + Object.keys(u[l[0]]).map(function (x) { return "<code>" + esc(x) + "</code> (" + u[l[0]][x] + ")"; }).join(" ") + "</p>"; }).join("");
     G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps to an account.</p>';
+    var fsp = d.fundSplit || [];
+    G3.$("dUnmapped").innerHTML += "<p><strong>Pay groups found:</strong> " + G3.PAYGROUPS.map(function (p) { return "<code>" + p + "</code>"; }).join(" ") + ". " + (fsp.length ? "Funding can\u2019t be split by pay group for " + fsp.map(esc).join(", ") + " (their Functional Areas span several pay groups)." : "Every account\u2019s funding maps to one pay group.") + "</p>";
     G3.$("dPrograms").innerHTML = "<p>Accounts feeding each program tab (edit <code>G3.PROGRAM_ACCOUNTS</code> at the top of loaders.js):</p>" + ["idt", "at", "sch", "mob"].map(function (p) { var acc = (d.accounts || []).filter(function (a) { return a.program === p; }).map(function (a) { return a.name; }); return "<p><strong>" + G3.PROGRAMS[p].title + ":</strong> " + (acc.length ? acc.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") : '<span class="warn">no account matched</span>') + ' <span class="muted">(matches ' + G3.PROGRAM_ACCOUNTS[p].join(", ") + ")</span></p>"; }).join("");
     G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC and Spend Plan tabs, or separate files.</p>';
   }

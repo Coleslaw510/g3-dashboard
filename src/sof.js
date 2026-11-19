@@ -26,7 +26,7 @@
     h += G3.pgNote();
     h += '<div class="kpis k6">' +
       G3.kpi(st.view, V.label, G3.money(T.level), levelSub, ' title="' + G3.full(T.level) + '"') +
-      G3.kpi("res" + (V.withCommit ? "" : " excl"), "Commitments", G3.money(T.commit), "") +
+      G3.kpi("res" + (V.withCommit ? "" : " excl"), "Commitments", G3.money(T.commit), "Upcoming (no date yet)") +
       G3.kpi("obl", "Obligations", G3.money(T.oblig), G3.pct(T.oblig / T.level) + " of " + V.label) +
       G3.kpi("disb", "Disbursements", G3.money(T.disb), G3.pct(T.disb / T.level) + " of " + V.label) +
       G3.kpi("tex", "Total execution", G3.money(T.exec), G3.pct(T.pctx) + " of " + V.label + (pc ? ' <span class="pill ' + pc.k + '">' + pc.t + "</span>" : "")) +
@@ -38,7 +38,7 @@
     h += '<div class="panel summary"><h2>Resource Manager summary</h2><p>FY' + fy + " " + V.label + " of " + G3.whole(T.level) + "; total execution " + G3.whole(T.exec) + " (" + G3.pct(T.pctx) + (exp ? ", " + exp.label.toLowerCase() : "") + "); balance available " + G3.whole(T.bal) + "." + (hi ? " Highest % executed: " + G3.esc(hi.a.name) + " at " + G3.pct(hi.pctx) + "." : "") + (st.view !== "allot" ? " " + over + " account" + (over === 1 ? "" : "s") + " over pace." : "") + (neg ? " <strong>" + neg + " account" + (neg === 1 ? " is" : "s are") + " over " + V.label + ".</strong>" : "") + (V.withCommit ? " Open commitments of " + G3.money(T.commit) + " are counted against TDP." : " " + G3.money(T.commit) + " of open commitments are not counted in this view.") + "</p></div>";
     // charts row 1
     h += '<div class="row r2"><div class="panel"><div class="tablehead"><h2>Execution by account vs ' + V.label + '</h2></div><div class="chartbox"><canvas id="cSofAcct"></canvas></div><p class="hint">Bar length = ' + V.label + ". Click an account to see its DPC breakdown.</p></div>" +
-      '<div class="panel"><div class="tablehead"><h2>' + (G3.data.hasPg.export ? "Execution by pay group" : "Commitments and obligations by pay group") + '</h2></div><div class="chartbox"><canvas id="cSofPg"></canvas></div><p class="hint">' + (G3.data.hasPg.export ? V.label + " vs total execution per pay group." : "From the commitments report, the only file with a Pay Group column.") + "</p></div></div>";
+      '<div class="panel"><div class="tablehead"><h2>' + (G3.data.hasPg.export ? "Execution by pay group" : "Commitments and obligations by pay group") + '</h2></div><div class="chartbox"><canvas id="cSofPg"></canvas></div><p class="hint">' + (G3.data.hasPg.export ? "Execution per pay group (first 5 digits of Functional Area). Funding isn\u2019t charted here because accounts can span pay groups." : "From the commitments report, the only file with a Pay Group column.") + "</p></div></div>";
     // trend
     var el = G3.fyElapsed(fy);
     h += '<div class="panel"><div class="tablehead"><h2>Execution trend</h2><span class="muted small">FY' + fy + " &middot; day " + el.day + " of " + el.total + "</span></div>" +
@@ -58,6 +58,8 @@
     // accounts table
     var cols = [["tdp", "TDP"], ["afp", "AFP"], ["allot", "Allotment"]];
     function trow(t, name, cls, caret) {
+      if (t.nf) return '<tr class="' + (cls || "") + '"><td>' + (caret || "") + name + '</td><td class="sec"></td><td class="sec"></td>' + cols.map(function (c) { return '<td class="num sec" title="Funding for this account spans several pay groups">\u2014</td>'; }).join("") +
+        '<td class="num' + (V.withCommit ? "" : " sec") + '">' + G3.whole(t.commit) + '</td><td class="num">' + G3.whole(t.oblig) + '</td><td class="num">' + G3.whole(t.disb) + '</td><td class="num act"><strong>' + G3.whole(t.exec) + '</strong></td><td class="num act">\u2014</td><td class="num">\u2014</td><td></td></tr>';
       var pc2 = st.view === "allot" ? (t.bal < 0 ? { k: "over", t: "Over allotment" } : t.level && t.bal / t.level < .1 ? { k: "funder", t: "Under 10% left" } : { k: "on", t: "Funds available" }) : G3.pace(t.pctx, exp && exp.v);
       var inf = (G3.data.acctInfo || {})[G3.util.an(t.a ? t.a.id : "")] || {};
       return '<tr class="' + (cls || "") + '"><td>' + (caret || "") + name + '</td><td class="sec">' + G3.esc(t.a ? inf.sag || "" : "") + '</td><td class="sec">' + G3.esc(t.a ? inf.mdep || "" : "") + "</td>" + cols.map(function (c) { return '<td class="num' + (c[0] === st.view ? " act" : " sec") + '">' + G3.whole(t[c[0]]) + "</td>"; }).join("") +
@@ -68,10 +70,14 @@
     rows.forEach(function (t) {
       var a = t.a, op = !!ui.open[a.id];
       h += trow(t, '<button class="alink" type="button" data-dpc="' + a.id + '">' + G3.esc(a.name) + "</button>", "", G3.data.hasPg.export ? '<button class="caret" type="button" data-open="' + a.id + '">' + (op ? "\u25BE" : "\u25B8") + "</button>" : "");
-      if (op && G3.data.hasPg.export) G3.PAYGROUPS.filter(G3.pgOk).forEach(function (pg) {
-        var t2 = G3.totals(G3.lines(fy, function (l) { return l.account === a.id && l.pg === pg; }), G3.funding(fy, function (f) { return f.account === a.id && f.pg === pg; }));
-        if (t2.level || t2.exec || t2.tdp) h += trow(t2, '<span class="pgdot" style="background:' + G3.PGCOL[pg] + '"></span>Pay group ' + pg, "cirow", '<span class="caret"></span>');
-      });
+      if (op && G3.data.hasPg.export) {
+        var split = (G3.data.fundSplit || []).indexOf(a.name) >= 0;
+        G3.PAYGROUPS.filter(G3.pgOk).concat(G3.state.pg === "All" ? [""] : []).forEach(function (pg) {
+          var t2 = G3.totals(G3.lines(fy, function (l) { return l.account === a.id && l.pg === pg; }), G3.funding(fy, function (f) { return f.account === a.id && f.pg === pg; }));
+          t2.nf = split;
+          if (t2.level || t2.exec || t2.tdp) h += trow(t2, pg ? '<span class="pgdot" style="background:' + G3.pgCol(pg) + '"></span>Pay group ' + pg : '<span class="pgdot" style="background:#94a3b8"></span>No pay group (other appropriation)', "cirow", '<span class="caret"></span>');
+        });
+      }
     });
     var TT = G3.totals(G3.lines(fy), G3.funding(fy));
     h += '</tbody><tfoot><tr><td>Total (' + rows.length + " accounts)</td><td></td><td></td>" + cols.map(function (c) { return '<td class="num">' + G3.whole(TT[c[0]]) + "</td>"; }).join("") + '<td class="num">' + G3.whole(TT.commit) + '</td><td class="num">' + G3.whole(TT.oblig) + '</td><td class="num">' + G3.whole(TT.disb) + '</td><td class="num">' + G3.whole(TT.exec) + '</td><td class="num">' + G3.whole(TT.bal) + '</td><td class="num">' + G3.pct(TT.pctx) + "</td><td></td></tr></tfoot></table></div></div>";
@@ -94,21 +100,30 @@
     ds.push({ label: "Balance (" + V.label + ")", data: rows.map(function (t) { return Math.max(0, t.bal); }), backgroundColor: C.remain, stack: "s" });
     G3.chart("cSofAcct", { type: "bar", data: { labels: rows.map(function (t) { return t.a.name; }), datasets: ds }, options: { indexAxis: "y", scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false } } }, plugins: { tooltip: G3.tipMoney }, onClick: function (e, el) { if (el.length) { ui.dpcAcct = rows[el[0].index].a.id; M.render(); G3.$("dpcPanel").scrollIntoView({ behavior: "smooth" }); } } } });
     var pgs = G3.PAYGROUPS.filter(G3.pgOk), pgT = pgs.map(function (pg) { return G3.totals(G3.lines(fy, function (l) { return aOk(l) && l.pg === pg; }), G3.funding(fy, function (f) { return aOk(f) && f.pg === pg; })); });
-    if (G3.data.hasPg.export) G3.chart("cSofPg", { type: "bar", data: { labels: pgs.map(function (p) { return "PG " + p; }), datasets: [{ label: V.label, data: pgT.map(function (t) { return t.level; }), backgroundColor: C[st.view] + "55", borderColor: C[st.view], borderWidth: 1.5, borderRadius: 6 }, { label: "Total execution", data: pgT.map(function (t) { return t.exec; }), backgroundColor: pgs.map(function (p) { return G3.PGCOL[p]; }), borderRadius: 6 }] }, options: { scales: { y: G3.axMoney, x: { grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
+    if (G3.data.hasPg.export) {
+      var pgs2 = pgs.concat(st.pg === "All" ? [""] : []), pgT2 = pgs2.map(function (pg) { return G3.totals(G3.lines(fy, function (l) { return aOk(l) && l.pg === pg; }), []); });
+      var pds = [{ label: "Disbursements", data: pgT2.map(function (t) { return t.disb; }), backgroundColor: C.disb, stack: "p" }, { label: "Obligations", data: pgT2.map(function (t) { return t.oblig; }), backgroundColor: C.oblig, stack: "p" }];
+      if (V.withCommit) pds.push({ label: "Upcoming commitments", data: pgT2.map(function (t) { return t.commit; }), backgroundColor: C.commit, stack: "p" });
+      G3.chart("cSofPg", { type: "bar", data: { labels: pgs2.map(function (p) { return p ? "PG " + p : "No PG (131\u2026)"; }), datasets: pds }, options: { scales: { y: Object.assign({ stacked: true }, G3.axMoney), x: { stacked: true, grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
+    }
     else { var dl2 = G3.data.dpcLines.filter(function (x) { return aOk(x) && G3.pgOk(x.pg); }); G3.chart("cSofPg", { type: "bar", data: { labels: pgs.map(function (p) { return "PG " + p; }), datasets: [{ label: "Obligations (DPC tracking)", data: pgs.map(function (p) { return G3.sum(dl2.filter(function (x) { return x.pg === p && x.type === "oblig"; }), "amt"); }), backgroundColor: C.oblig, stack: "p", borderRadius: 4 }, { label: "Commitments", data: pgs.map(function (p) { return G3.sum(dl2.filter(function (x) { return x.pg === p && x.type === "commit"; }), "amt"); }), backgroundColor: C.commit, stack: "p", borderRadius: 4 }] }, options: { scales: { y: Object.assign({ stacked: true }, G3.axMoney), x: { stacked: true, grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } }); }
     var cur = G3.curFm(fy), mon = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], ob = mon.slice(), db = mon.slice(), cm = mon.slice();
-    L.forEach(function (l) { ob[l.fm - 1] += l.oblig; db[l.fm - 1] += l.disb; cm[l.fm - 1] += l.commit; });
-    var monEx = ob.map(function (v, i) { return v + db[i] + (V.withCommit ? cm[i] : 0); });
+    var upc = 0;
+    L.forEach(function (l) { if (!l.fm) { upc += l.commit; return; } ob[l.fm - 1] += l.oblig; db[l.fm - 1] += l.disb; });
+    var monEx = ob.map(function (v, i) { return v + db[i]; });
     var cumEx = G3.cum(monEx).map(function (v, i) { return i < cur ? v : null; });
     var planM = G3.planMonths(G3.plans(fy, aOk)), cumPlan = G3.cum(planM);
     var cds = [{ label: "Cumulative execution", data: cumEx, borderColor: "#2563eb", backgroundColor: "#2563eb22", fill: true, tension: .25, pointRadius: 3 }, { label: "Spend plan (cumulative)", data: cumPlan, borderColor: "#0d9488", borderDash: [5, 4], pointRadius: 0, tension: .25 }];
+    if (V.withCommit && upc && cur) cds.push({ label: "With upcoming commitments", data: G3.MONTHS.map(function (m, i) { return i === cur - 1 ? cumEx[i] + upc : null; }), borderColor: C.commit, backgroundColor: C.commit, pointRadius: 7, pointStyle: "rectRot", showLine: false });
     if (st.view === "tdp") cds.push({ label: "Straight-line pace (TDP \u00f7 12)", data: G3.MONTHS.map(function (m, i) { return T.tdp * (i + 1) / 12; }), borderColor: "#94a3b8", borderDash: [2, 3], pointRadius: 0 });
     else cds.push({ label: V.label + " level", data: G3.MONTHS.map(function () { return T.level; }), borderColor: C[st.view], borderDash: [6, 3], pointRadius: 0 });
     G3.chart("cSofCum", { type: "line", data: { labels: G3.MONTHS, datasets: cds }, options: { scales: { y: G3.axMoney, x: { grid: { display: false } } }, plugins: { tooltip: G3.tipMoney } } });
     var mds = [{ label: "Disbursements", data: db, backgroundColor: C.disb, stack: "m" }, { label: "Obligations", data: ob, backgroundColor: C.oblig, stack: "m" }];
-    if (V.withCommit) mds.push({ label: "Commitments", data: cm, backgroundColor: C.commit, stack: "m" });
-    mds.push({ type: "line", label: "Spend plan", data: planM, borderColor: "#0d9488", borderDash: [5, 4], pointRadius: 2, tension: .25 });
-    G3.chart("cSofMon", { type: "bar", data: { labels: G3.MONTHS, datasets: mds }, options: { scales: { x: { stacked: true, grid: { display: false } }, y: Object.assign({ stacked: true }, G3.axMoney) }, plugins: { tooltip: G3.tipMoney } } });
+    var pad = function (a) { return V.withCommit ? a.concat([null]) : a; };
+    mds[0].data = pad(db); mds[1].data = pad(ob);
+    if (V.withCommit) mds.push({ label: "Upcoming commitments (no date)", data: G3.MONTHS.map(function () { return null; }).concat([upc]), backgroundColor: C.commit, stack: "m" });
+    mds.push({ type: "line", label: "Spend plan", data: pad(planM), borderColor: "#0d9488", borderDash: [5, 4], pointRadius: 2, tension: .25 });
+    G3.chart("cSofMon", { type: "bar", data: { labels: G3.MONTHS.concat(V.withCommit ? ["Upcoming"] : []), datasets: mds }, options: { scales: { x: { stacked: true, grid: { display: false } }, y: Object.assign({ stacked: true }, G3.axMoney) }, plugins: { tooltip: G3.tipMoney } } });
     var dds = [{ label: "Obligations", data: dps.map(function (t) { return t.oblig; }), backgroundColor: C.oblig, stack: "d" }, { label: "Commitments", data: dps.map(function (t) { return t.commit; }), backgroundColor: C.commit, stack: "d" }];
     G3.chart("cSofDpc", { type: "bar", data: { labels: dps.slice(0, 14).map(function (t) { return t.name.length > 34 ? t.name.slice(0, 33) + "\u2026" : t.name; }), datasets: dds.map(function (x) { x.data = x.data.slice(0, 14); return x; }) }, options: { indexAxis: "y", scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } } }, plugins: { tooltip: G3.tipMoney } } });
   };

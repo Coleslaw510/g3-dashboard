@@ -52,6 +52,37 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(r.zeroRaw > 0 && r.zeroSkipped === r.zeroRaw && r.zeroLoaded === 0, 'zero-open FMZ3 rows excluded (' + r.zeroRaw + ')');
   ok(r.trav[0] === 'John Smith' && r.trav[1] === 'John Smith' && r.trav[2] === 'Maria Johnson' && r.dtsDesc.length, 'traveler cleanup ' + r.trav.join(' / '));
   ok(r.idtPrios > 1 && Math.abs(r.idtRawSum - r.idtPlan) <= 1, 'multiple prioritizations summed for IDT (' + r.idtPrios + ' rows)');
+  // ---- pay group / allotment / upcoming commitments ----
+  const q = await p.evaluate(() => {
+    const t = G3.pgFromFa, d = G3.data, cur = G3.fyOf(G3.asOf());
+    const parse = hdr => G3.parseWorkbook('k.xlsx', [{ name: 'Funding', aoa: [hdr, ['IDT', 100, 60, 45, '135', 'VTRN']] }]);
+    const a1 = parse(['Account', 'TDP', 'AFP', 'Allotment', 'SAG', 'MDEP']), a2 = parse(['Account', 'TDP', 'AFP', 'Allot Amt (Q1)', 'SAG', 'MDEP']);
+    const g = x => x.map(o => o.rows ? o : o).flat ? x : x;
+    const f1 = (Array.isArray(a1) ? a1 : a1.results || [a1]).find(z => z.kind === 'fundkey' || (z.report && z.report.kind === 'fundkey'));
+    const f2 = (Array.isArray(a2) ? a2 : a2.results || [a2]).find(z => z.kind === 'fundkey' || (z.report && z.report.kind === 'fundkey'));
+    G3.state.pg = 'All'; const allU = G3.mods.ulo.rows().length, all131 = G3.mods.ulo.rows().filter(u => u.pg === '').length;
+    G3.state.pg = '10010'; const u10 = G3.mods.ulo.rows(), L10 = G3.lines(cur), F10 = G3.funding(cur); G3.state.pg = 'All';
+    const sch = d.dpcLines.filter(x => x.account === 'SCHOOLS'), schRaw = G3.data.sets.commit.rows.filter(x => /1B3PSCH/.test(x.fa));
+    return {
+      pg: [t('100101B3PRAT'), t('131G48ASDF'), t('100701B3PIDT'), t(''), t('1234X')],
+      expPg: d.lines.filter(l => l.src === 'export' && l.pg).length, exp131: d.lines.filter(l => l.src === 'export' && l.pg === '').length,
+      uloPg: d.ulo.filter(u => u.pg).length, ulo131: d.ulo.filter(u => u.pg === '').length, allU, all131, u10n: u10.length, u10bad: u10.filter(u => u.pg !== '10010').length,
+      L10bad: L10.filter(l => l.pg !== '10010').length, L10n: L10.length,
+      fundPg: d.funding.filter(f => f.fy === cur).map(f => f.account + '=' + f.pg).join(' '), F10: F10.map(f => f.account).join(','), split: d.fundSplit.join(','),
+      schBlankCol: schRaw.length && schRaw.every(x => x.pg === x.fa.slice(0, 5)),
+      a1: f1 ? (f1.report || f1).hasAllot : 'nf', a1v: f1 ? (f1.rows || [])[0] && f1.rows[0].allot : null, a2: f2 ? (f2.rows || [])[0] && f2.rows[0].allot : null, a2note: f2 ? JSON.stringify((f2.report || {}).notes) : '',
+      hasAllot: d.hasAllot, allotTot: Math.round(G3.sum(d.funding.filter(f => f.fy === cur), 'allot')),
+      commitFm: d.lines.filter(l => l.src === 'commit' && l.fm != null).length, monthCommit: G3.spendByFm(G3.lines(cur)).reduce((a, b) => a + b, 0) === G3.spendByFm(G3.lines(cur, l => l.src === 'export')).reduce((a, b) => a + b, 0)
+    };
+  });
+  console.log(JSON.stringify(q, null, 1));
+  ok(q.pg.join() === '10010,,10070,,', 'pay group from Functional Area: 100101B3PRAT->10010, 131G48ASDF->none');
+  ok(q.expPg > 0 && q.exp131 > 0 && q.uloPg > 0 && q.ulo131 > 0, 'export + FMZ3 rows get pay groups; 131G rows get none');
+  ok(q.all131 > 0 && q.u10n > 0 && q.u10bad === 0 && q.L10bad === 0, 'pay group filter: 131G rows only under All; 10010 filter keeps only 10010 lines (Unliquidated too)');
+  ok(/TRAINING SUPPORT=10090/.test(q.fundPg) && /ADOS=(\s|$)/.test(q.fundPg + ' ') && /IDT=null/.test(q.fundPg) && !/ADOS|TRAINING SUPPORT/.test(q.F10) && /IDT/.test(q.F10), 'funding by pay group only for single-pay-group accounts (' + q.fundPg + ')');
+  ok(q.schBlankCol, 'commitments with blank Pay Group column take pay group from Functional Area');
+  ok(q.a1 === true && q.a1v === 45 && q.a2 === 45 && /right of AFP/.test(q.a2note) && q.hasAllot && q.allotTot > 0, 'Allotment parsed (header, and odd header right of AFP)');
+  ok(q.commitFm === 0 && q.monthCommit, 'commitments are upcoming (no month), not in monthly actuals');
   // FMZ number in the expanded row
   await p.evaluate(() => G3.go('ulo')); await p.waitForTimeout(300);
   await p.click('#page-ulo tr.ulr'); await p.waitForTimeout(200);
