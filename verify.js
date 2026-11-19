@@ -165,6 +165,31 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(m.od === clean.od && m.od > 0 && m.tdp === clean.tdp && m.kOb !== '$0', 'realistic export: actuals under All match the clean export (' + m.od + ')');
   ok(m.od10 === clean.od10 && m.od10 > 0 && m.tdp10 === clean.tdp10 && m.idt === clean.idt && m.idt > 0, 'realistic export: pay group 10010 and the IDT tab populate (' + m.od10 + ', IDT ' + m.idt + ')');
   ok(m.dr, 'data panel shows $ loaded / $ unmapped per dataset');
+  // ---- Cole's full GFEBS export header (Aviation/G1 column rules) + Spend Plans ----
+  const p4 = await ctx.newPage(); p4.on('pageerror', e => errs.push(e.message));
+  await p4.goto('file://' + __dirname + '/g3-dashboard.html#/spend'); await p4.waitForTimeout(600);
+  const sfp = async pg => pg.evaluate(() => { const fy = G3.state.fy; G3.state.pg = 'All'; const sp = G3.mods.spend.calc(fy, ''); const T = G3.totals(G3.lines(fy), G3.funding(fy));
+    G3.state.pg = '10010'; const sp10 = G3.mods.spend.calc(fy, ''); G3.state.pg = 'All';
+    const prog = ['idt', 'at', 'sch', 'mob'].map(k => Math.round(G3.programCalc(k, fy).spent) + '/' + Math.round(G3.programCalc(k, fy).planTD));
+    return { fy, cur: sp.cur, pTD: Math.round(sp.tot.pTD), aTD: Math.round(sp.tot.aTD), fyPlan: Math.round(sp.tot.fyPlan), aTD10: Math.round(sp10.tot.aTD), od: Math.round(T.od), tdp: T.tdp, prog: prog.join(' '),
+      acts: sp.accts.filter(r => r.aTD > 0 && r.pTD > 0).length, ulo: G3.data.ulo.length }; });
+  const F0 = await sfp(p4);
+  const sdir = path.join(__dirname, 'samples'), gdir = path.join(sdir, 'gfebs');
+  const gFiles = fs.readdirSync(sdir).filter(f => /\.xlsx$/.test(f) && !/^Status of Funds export/.test(f)).map(f => path.join(sdir, f)).concat([path.join(gdir, 'Status of Funds export (GFEBS full columns).xlsx')]);
+  await p4.setInputFiles('#fileInput', gFiles); await p4.waitForFunction(() => G3.data.source === 'file', null, { timeout: 15000 }); await p4.waitForTimeout(800);
+  const F1 = await sfp(p4);
+  const gx = await p4.evaluate(() => { const r = G3.data.sets.export.report; location.hash = '#/spend'; G3.refresh(); const k = [...document.querySelectorAll('#page-spend .kpi .val')].map(x => x.textContent);
+    return { notes: r.notes, ign: r.ignoredCols, rows: G3.data.sets.export.rows.length, unm: G3.data.diag.export.unmapped, noMonth: G3.data.diag.export.noMonth, kpis: k, sets: Object.keys(G3.data.sets).length }; });
+  console.log(JSON.stringify({ F0, F1, gx }, null, 1));
+  ok(gx.rows === 637 && gx.unm === 0 && gx.noMonth === 0 && /"fiscal_month"/.test(gx.notes.join(' ')) && /"commitment_amt_cum"/.test(gx.notes.join(' ')), "Cole's full GFEBS header (111 columns): reads contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum; ignores " + gx.ign + ' others; 637 rows, $0 unmapped, every line has a month');
+  ok(F1.od === F0.od && F1.tdp === F0.tdp && F1.prog === F0.prog && F1.ulo === F0.ulo && gx.sets === 9, 'GFEBS export: Status of Funds, program tabs and Unliquidated match the test data (look-alike columns fiscal_period / obligation_amt_cum / fiscal_year_gjahr not read)');
+  ok(F1.pTD === F0.pTD && F1.aTD === F0.aTD && F1.pTD > 0 && F1.aTD > 0 && F1.aTD10 > 0 && F1.acts >= 4 && gx.kpis.every(v => v !== '$0'), 'Spend Plans populate from the GFEBS export: planned to date ' + F1.pTD + ', actual ' + F1.aTD + ' through month ' + F1.cur + ' (10010 actual ' + F1.aTD10 + ')');
+  // Aviation/G1 spend plan layout (Account + date month headers) also loads
+  await p4.setInputFiles('#fileInput', [path.join(gdir, 'Spend plan (Account layout).xlsx')]); await p4.waitForTimeout(1200);
+  const F2 = await sfp(p4), pr = await p4.evaluate(() => G3.data.sets.plan.report);
+  ok(pr.months === 12 && F2.fyPlan === F0.fyPlan && F2.pTD === F0.pTD, 'spend plan with Account + date month headers (Aviation/G1 layout) loads: 12 months, year plan ' + F2.fyPlan);
+  const fmv = await p4.evaluate(() => ['2027002', 2027002, '002.2027', 'P02', '02 - Nov', 'Nov', 2, '002'].map(v => G3.util.fmNum(v)));
+  ok(fmv.every(x => x === 2), 'fiscal month formats (2027002, 002.2027, P02, 02 - Nov, Nov, 2, 002) all read as month 2');
   ok(errs.length === 0, 'no console errors ' + JSON.stringify(errs));
   await b.close();
 })();

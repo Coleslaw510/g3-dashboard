@@ -277,6 +277,8 @@
         var pc = dg.total ? dg.unmapped / dg.total : 0;
         notes.unshift('<span class="dmoney"><b>' + G3.whole(dg.total) + "</b> " + dg.label + " loaded" + (dg.unmapped ? ' &middot; <span class="' + (pc > .05 ? "err" : "warn") + '">' + G3.whole(dg.unmapped) + " (" + G3.pct(pc, 0) + ") unmapped: " + esc(dg.why) + "</span>" : "") +
           (dg.byFy && Object.keys(dg.byFy).length ? '<br><span class="muted">by fiscal year: ' + Object.keys(dg.byFy).sort().map(function (f) { return "FY" + esc(f) + " " + G3.money(dg.byFy[f]); }).join(" &middot; ") + "</span>" : "") +
+          (k === "export" ? '<br><span class="muted">monthly actuals (Spend Plans / trends) through ' + (dg.lastFm ? G3.MONTHS[dg.lastFm - 1] + " (month " + dg.lastFm + ") of FY" + esc(d.wfy) : "no month") + "</span>" + (dg.noMonth ? ' &middot; <span class="warn">' + G3.whole(dg.noMonth) + " on lines with no readable fiscal month (in totals, not in any month)</span>" : "") : "") +
+          (k === "plan" && d.planFy ? '<br><span class="muted">compared against FY' + esc(d.planFy.join(", FY")) + "</span>" : "") +
           (k === "export" && d.faPrefix ? '<br><span class="muted">' + G3.num(d.faPrefix) + " rows matched an Accounts-tab Functional Area by its first characters</span>" : "") + "</span>");
       }
       return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";

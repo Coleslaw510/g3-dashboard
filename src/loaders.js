@@ -29,14 +29,14 @@
     if (/^(func(tional|t)?area(farea|fa|code|cd|id)?|farea|fa)$/.test(s)) return "functionalarea";
     if (/^(acct|account)(name|title|nm)?$/.test(s)) return "account";
     if (/^(fiscalyr|fiscyear|fyr)$/.test(s)) return "fiscalyear";
-    if (/^(fiscalmonth|fiscalmonthno|fiscalmonthnumber|fiscalmo|fiscalperiod|fiscalper|period|postingperiod|fmonth)$/.test(s)) return "fiscalmonth";
+    if (/^(fiscalmonth|fiscalmonthno|fiscalmonthnumber|fiscalmo|fmonth)$/.test(s)) return "fiscalmonth";
     if (/^(commitmentitem(fipex|code|cd)?|cmmtitem|cmtitem|fipex|ci)$/.test(s)) return "commitmentitem";
     if (/^(totalexpenditures?|totalexp|commitmentamtcum|commitmentamount|commitmentscum)$/.test(s)) return "commitmentamtcum";
     if (/^(disbursementamtcum|disbursements?|disbursementamount|disbursedamt|disbursed)$/.test(s)) return "disbursementamtcum";
     return s;
   }
   function isPii(h) { var s = decodeX(h).toLowerCase(); if (/social\s*_?security/.test(s)) return true; return s.split(/[^a-z0-9]+/).some(function (t) { return /^ssn|ssn$/.test(t); }); }
-  function aliasMap(cols) { var m = {}; cols.forEach(function (c) { m[norm(c[1])] = c[0]; c[2].forEach(function (a) { if (!m[a]) m[a] = c[0]; }); }); return m; }
+  function aliasMap(cols) { var m = {}, x = {}; cols.forEach(function (c) { m[norm(c[1])] = c[0]; c[2].forEach(function (a) { if (!m[a]) m[a] = c[0]; if (!x[a]) x[a] = c[0]; }); }); Object.defineProperty(m, "__exact", { value: x }); return m; }
   function txt(v) { return v == null ? "" : String(v).replace(/\u00a0/g, " ").trim(); }
   function blankish(v) {
     if (v == null) return true; if (typeof v === "number") return !isFinite(v);
@@ -55,11 +55,14 @@
   function fyText(v) { if (blankish(v)) return ""; var s = typeof v === "number" ? String(Math.round(v)) : txt(v), m = s.match(/^(?:fy\s*)?(\d{2}|\d{4})(?:\.0+)?$/i); if (!m) return s; return m[1].length === 2 ? "20" + m[1] : m[1]; }
   var MON_FM = { oct: 1, nov: 2, dec: 3, jan: 4, feb: 5, mar: 6, apr: 7, may: 8, jun: 9, jul: 10, aug: 11, sep: 12 };
   function fmNum(v) {
-    if (blankish(v)) return null; if (typeof v === "number") return v === Math.round(v) && v >= 1 && v <= 12 ? v : NaN;
-    var s = txt(v).toLowerCase(), m = s.match(/^(?:p|per|period|fm|m)?\s*0*(\d{1,2})(?:\.0+)?(?:\s*[-\u2013:.]?\s*[a-z]{3,9}\.?)?$/);
+    if (blankish(v)) return null; if (typeof v === "number") { if (v >= 2000001 && v <= 2099012 && v === Math.round(v)) v = v % 1000; return v === Math.round(v) && v >= 1 && v <= 12 ? v : NaN; }
+    var s = txt(v).toLowerCase(), m = s.match(/^(?:20\d\d)[\/.]?(0\d\d)$|^(0\d\d)[\/.](?:20\d\d)$/);   // SAP fiscal year/period: 2027002, 2027/002, 002.2027
+    if (m) { var pp = +(m[1] || m[2]); return pp >= 1 && pp <= 12 ? pp : NaN; }
+    m = s.match(/^(?:p|per|period|fm|m)?\s*0*(\d{1,2})(?:\.0+)?(?:\s*[-\u2013:.]?\s*[a-z]{3,9}\.?)?$/);
     if (m) { var x = +m[1]; return x >= 1 && x <= 12 ? x : NaN; }
     m = s.match(/^([a-z]{3})[a-z]*\.?$/); return m && MON_FM[m[1]] ? MON_FM[m[1]] : NaN;
   }
+  function fmOfDate(v) { var d = dateIso(v); return d ? (+d.slice(5, 7) + 2) % 12 + 1 : null; }
   function isAllobj(v) { return typeof v === "string" && txt(v).toUpperCase() === "ALLOBJ"; }
   function kn(v) { var s = idText(v).toUpperCase().replace(/\s+/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
   function an(v) { return txt(v).replace(/\s+/g, " ").toUpperCase(); }
@@ -77,21 +80,27 @@
   function mapHeaders(src, alias) {
     var hi = 0, best = -1;
     for (var r = 0; r < Math.min(src.rows, 20); r++) { var sc = 0; for (var c = 0; c < src.cols; c++) { var h = src.get(r, c); if (h != null && h !== "" && alias[norm(h)]) sc++; } if (sc > best) { best = sc; hi = r; } }
-    var map = {}, extra = [];
-    for (var ci = 0; ci < src.cols; ci++) {
-      var hv = src.get(hi, ci); if (hv == null || txt(hv) === "") continue; if (isPii(hv)) continue;
+    var map = {}, extra = [], used = {};
+    for (var c0 = 0; c0 < src.cols; c0++) {   // pass 1: a header that IS one of the listed names (e.g. fiscal_month, commitment_amt_cum) wins
+      var h0 = src.get(hi, c0); if (h0 == null || txt(h0) === "" || isPii(h0)) continue;
+      var r0 = decodeX(h0).replace(/\u00a0/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, ""), k0 = alias.__exact[r0];
+      if (k0 && map[k0] == null) { map[k0] = c0; used[c0] = 1; }
+    }
+    for (var ci = 0; ci < src.cols; ci++) {   // pass 2: header variants (FA, Func Area, Total Expenditure ...)
+      if (used[ci]) continue; var hv = src.get(hi, ci); if (hv == null || txt(hv) === "") continue; if (isPii(hv)) continue;
       var k = alias[norm(hv)]; if (!k) { extra.push(txt(decodeX(hv))); continue; } if (map[k] != null) continue; map[k] = ci;
     }
     return { hi: hi, map: map, extra: extra };
   }
-  G3.util = { norm: norm, txt: txt, parseAmt: parseAmt, idText: idText, kn: kn, an: an, dateIso: dateIso, aoaSource: aoaSource };
+  G3.util = { fmNum: fmNum, norm: norm, txt: txt, parseAmt: parseAmt, idText: idText, kn: kn, an: an, dateIso: dateIso, aoaSource: aoaSource };
 
   // ---------- column aliases ----------
   var ACCT_AL = ["account", "accountname", "acctname", "acct"], FA_AL = ["functionalarea", "functionalareafarea", "farea"];
   var EXPORT_COLS = [   // Aviation Status of Funds export, unchanged (+ optional Pay Group / Internal Order if the export carries them)
     ["doc", "Document Number", ["contractdocno"]], ["ci", "Commitment Item", ["commitmentitem", "commitmentitemfipex"]],
     ["fa", "Functional Area", ["functionalareafarea", "functionalarea"]], ["appn", "Appropriation", ["appropriationtype", "appropriation"]],
-    ["fy", "Fiscal Year", ["fiscalyear"]], ["fm", "Fiscal Month", ["fiscalmonth"]],
+    ["fy", "Fiscal Year", ["fiscalyear"]], ["fm", "Fiscal Month", ["fiscalmonth", "fiscalmonthno", "fiscalmonthnumber", "fiscalmo"]],
+    ["fm2", "Fiscal Period", ["fiscalperiod", "fiscalper", "periodperio", "postingperiod", "period"]], ["pdate", "Posting Date", ["postingdateinthedocumentbudat", "postingdate"]],
     ["com", "Total Expenditure", ["commitmentamtcum", "commitments"]], ["disb", "Disbursement", ["disbursementamtcum"]],
     ["pg", "Pay Group", ["paygroup", "paygrp"]], ["dpc", "Internal Order", ["internalorder", "dpc"]]
   ];
@@ -112,7 +121,16 @@
   var CKEY_COLS = [["ci", "Commitment Item", ["commitmentitem", "commitmentitemfipex", "commititem", "ci"]], ["desc", "Description", ["description", "desc", "commitmentitemdescription", "cidescription"]]];
   var SKEY_COLS = [["prio", "Prioritization", ["prioritization", "priority", "prioritisation"]], ["acct", "Account", ACCT_AL]];
   var A = { export: aliasMap(EXPORT_COLS), commit: aliasMap(COMMIT_COLS), fmz3: aliasMap(FMZ_COLS), fundkey: aliasMap(FUND_COLS), acctkey: aliasMap(AKEY_COLS), dpckey: aliasMap(DKEY_COLS), spkey: aliasMap(SKEY_COLS), cikey: aliasMap(CKEY_COLS) };
-  function monthOf(h) { var s = norm(h).replace(/^(fy\d{2,4})/, ""), m = s.match(/^(oct|nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep)/); if (!m) return 0; if (/^(total|actual|obl)/.test(s)) return 0; return MON_FM[m[1]]; }
+  function monthOf(h) {
+    if (h instanceof Date) return (h.getMonth() + 3) % 12 + 1;
+    if (typeof h === "number") { if (h > 20000 && h < 80000) { var dd = new Date(Math.round((h - 25569) * 864e5)); return (dd.getUTCMonth() + 3) % 12 + 1; } return 0; }
+    var raw = txt(h).toLowerCase(), mm;
+    if ((mm = raw.match(/^(\d{4})[-\/.](\d{1,2})(?:[-\/.]\d{1,2})?(?:[ t].*)?$/)) && +mm[2] >= 1 && +mm[2] <= 12) return (+mm[2] + 2) % 12 + 1;   // 2026-10-01
+    if ((mm = raw.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/)) && +mm[1] >= 1 && +mm[1] <= 12) return (+mm[1] + 2) % 12 + 1;          // 10/1/2026
+    if ((mm = norm(h).match(/^(?:month|fm|m|fiscalmonth)(\d{1,2})$/)) && +mm[1] >= 1 && +mm[1] <= 12) return +mm[1];                               // Month 1 = Oct
+    return monthName(h);
+  }
+  function monthName(h) { var s = norm(h).replace(/^(fy\d{2,4})/, ""), m = s.match(/^(oct|nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep)/); if (!m) return 0; if (/^(total|actual|obl)/.test(s)) return 0; return MON_FM[m[1]]; }
   G3.KIND_LABEL = { fundkey: "Funding key", acctkey: "Account key", dpckey: "DPC key", spkey: "Spend plan key", cikey: "Commitment item key", export: "Status of Funds export", commit: "Commitments report", fmz3: "FMZ3 unliquidated", plan: "Spend plan" };
   G3.KIND_ORDER = ["fundkey", "acctkey", "dpckey", "spkey", "cikey", "export", "commit", "fmz3", "plan"];
 
@@ -128,6 +146,7 @@
       else if (has("entrytype") && has("amount") && has("internalorder")) k = "commit";
       else if (EXPORT_ONLY.some(function (x) { return H[x]; })) k = "export";
       else if (has("prioritization", "priority", "prioritisation") && nMon >= 6) k = "plan";
+      else if (has.apply(null, ACCT_AL) && nMon >= 6 && !has("tdp", "afp")) k = "plan";   // Aviation/G1 layout: Account, October ... September
       else if (has("prioritization", "priority", "prioritisation") && has.apply(null, ACCT_AL)) k = "spkey";
       else if (has("commitmentitem", "commititem") && has("description", "desc", "commitmentitemdescription") && !has("dpc", "internalorder", "tdc") && !has.apply(null, ACCT_AL)) k = "cikey";
       else if (has("tdc") || (has("dpc", "internalorder") && has("description", "desc", "dpcdescription"))) k = "dpckey";
@@ -158,7 +177,10 @@
     rep.hasPg = map.pg != null || map.fa != null; rep.hasDpc = map.dpc != null;
     var rows = rowsOf(src, hm, function (raw, rn) {
       if (isAllobj(raw.ci)) { skip(rep, "ALLOBJ lines removed"); return null; }
-      var fm = "fm" in raw ? fmNum(raw.fm) : null; if (fm !== null && isNaN(fm)) { skip(rep, "unreadable fiscal month (kept, no month)"); fm = null; }
+      var fm = "fm" in raw ? fmNum(raw.fm) : null; if (fm !== null && isNaN(fm)) fm = null;
+      if (fm == null && "fm2" in raw) { fm = fmNum(raw.fm2); if (isNaN(fm)) fm = null; if (fm != null) rep.fmFrom2 = (rep.fmFrom2 || 0) + 1; }
+      if (fm == null && "pdate" in raw) { fm = fmOfDate(raw.pdate); if (fm != null) rep.fmFromDate = (rep.fmFromDate || 0) + 1; }
+      if (fm == null) skip(rep, "no readable fiscal month (counted in totals, not in any month)");
       var com = parseAmt(raw.com), disb = parseAmt(raw.disb);
       if (isNaN(com)) com = null; if (isNaN(disb)) disb = null;
       if (FLIP_EXPORT_SIGN) { if (com) com = -com; if (disb) disb = -disb; }
@@ -166,6 +188,10 @@
       return { doc: idText(raw.doc), ci: idText(raw.ci), fa: idText(raw.fa), appn: idText(raw.appn), fy: fyText(raw.fy), fm: fm, te: com || 0, oblig: obl, disb: disb || 0, pg: idText(raw.pg) || G3.pgFromFa(raw.fa), dpc: idText(raw.dpc) };
     }, rep);
     if (FLIP_EXPORT_SIGN) rep.notes.push("Signs flipped; Obligation = Total Expenditure \u2212 Disbursement (Aviation rule)");
+    var used = ["doc", "ci", "fa", "appn", "fy", "fm", "com", "disb"].filter(function (k) { return map[k] != null; }).map(function (k) { return '"' + txt(decodeX(src.get(hm.hi, map[k]))) + '"'; });
+    rep.notes.push("Columns read (Aviation/G1 rule): " + used.join(", ") + "; " + hm.extra.length + " other columns ignored (obligation_amt_cum is not read)");
+    if (rep.fmFrom2) rep.notes.push(rep.fmFrom2 + " lines had no readable fiscal_month; month taken from the fiscal period column");
+    if (rep.fmFromDate) rep.notes.push(rep.fmFromDate + " lines had no readable fiscal month; month taken from the posting date");
     return { rows: rows, report: rep };
   };
   P.commit = function (src) {
@@ -244,24 +270,25 @@
     return { rows: rowsOf(src, hm, function (raw) { var p = txt(raw.prio), ac = txt(raw.acct).replace(/\s+/g, " "); if (!p || !ac) { skip(rep, "missing Prioritization or Account"); return null; } return { prio: p, acct: ac }; }, rep), report: rep };
   };
   P.plan = function (src, cls) {
-    var hi = cls ? cls.row : 0, pc = -1, fyc = -1, mc = {}, rep = { kind: "plan", headerRow: hi + 1, rowsRead: 0, rowsLoaded: 0, blank: 0, skipped: {}, notes: [], ignoredCols: 0, fatal: null };
+    var hi = cls ? cls.row : 0, pc = -1, ac = -1, fyc = -1, mc = {}, rep = { kind: "plan", headerRow: hi + 1, rowsRead: 0, rowsLoaded: 0, blank: 0, skipped: {}, notes: [], ignoredCols: 0, fatal: null };
     for (var c = 0; c < src.cols; c++) {
       var h = src.get(hi, c); if (h == null || h === "") continue; var nh = norm(h), mo = monthOf(h);
       if (pc < 0 && ["prioritization", "priority", "prioritisation"].indexOf(nh) >= 0) pc = c;
+      else if (ac < 0 && ACCT_AL.indexOf(nh) >= 0) ac = c;
       else if (fyc < 0 && (nh === "fiscalyear" || nh === "fy")) fyc = c;
       else if (mo && mc[mo] == null) mc[mo] = c; else rep.ignoredCols++;
     }
-    if (pc < 0) { rep.fatal = "No Prioritization column."; return { rows: [], report: rep }; }
+    if (pc < 0 && ac < 0) { rep.fatal = "No Prioritization or Account column."; return { rows: [], report: rep }; }
     var out = [];
     for (var r = hi + 1; r < src.rows; r++) {
-      var p = txt(src.get(r, pc)), m = [], any = false;
+      var p = pc >= 0 ? txt(src.get(r, pc)) : "", pa = ac >= 0 ? txt(src.get(r, ac)).replace(/\s+/g, " ") : "", m = [], any = false;
       for (var i = 1; i <= 12; i++) { var x = mc[i] != null ? parseAmt(src.get(r, mc[i])) : null; if (x == null || isNaN(x)) x = 0; else any = true; m.push(x); }
-      if (!p && !any) { rep.blank++; continue; } rep.rowsRead++;
-      if (!p) { skip(rep, "no Prioritization"); continue; } if (/^(grand\s*)?total/i.test(p)) { skip(rep, "total rows"); continue; }
-      out.push({ prio: p, fy: fyc >= 0 ? fyText(src.get(r, fyc)) : "", m: m });
+      if (!p && !pa && !any) { rep.blank++; continue; } rep.rowsRead++;
+      if (!p && !pa) { skip(rep, "no Prioritization or Account"); continue; } if (/^(grand\s*)?(sub\s*)?total/i.test(p || pa)) { skip(rep, "total rows"); continue; }
+      out.push({ prio: p, acct: pa, fy: fyc >= 0 ? fyText(src.get(r, fyc)) : "", m: m });
     }
     rep.rowsLoaded = out.length; rep.months = Object.keys(mc).length;
-    rep.notes.push("Used Prioritization and " + rep.months + " month columns; " + rep.ignoredCols + " other columns ignored");
+    rep.notes.push("Used " + (pc >= 0 ? "Prioritization" + (ac >= 0 ? " (Account column when a prioritization isn't on the Spend Plan tab)" : "") : "Account") + " and " + rep.months + " month columns; " + rep.ignoredCols + " other columns ignored");
     return { rows: out, report: rep };
   };
 
@@ -320,7 +347,8 @@
     rows("fundkey").forEach(function (r) { if (r.fa && !faMap[kn(r.fa)]) faMap[kn(r.fa)] = names[an(r.acct)]; });
     // working fiscal year: the latest one in the funds export (what the dashboard opens on); no export -> the current fiscal year
     var expFys = {}; rows("export").forEach(function (r) { if (r.fy) expFys[r.fy] = 1; });
-    var wfy = Object.keys(expFys).sort().pop() || cur; d.wfy = wfy;
+    // Aviation/G1 rule: the current fiscal year when the export has it, else the latest earlier year, else the latest year
+    var eys = Object.keys(expFys).sort(), wfy = eys.indexOf(cur) >= 0 ? cur : (eys.filter(function (y) { return +y < +cur; }).pop() || eys[eys.length - 1] || cur); d.wfy = wfy;
     // pay groups per account, from the Functional Areas mapped to it on the Accounts tab
     var acctPgs = {}; rows("acctkey").forEach(function (r) { var k = an(r.acct), o = acctPgs[k] || (acctPgs[k] = {}); o[G3.pgFromFa(r.fa)] = 1; });
     // account pay group: the pay group of its Functional Areas; several -> the one with most FAs (first on ties), listed as a key conflict.
@@ -359,7 +387,7 @@
     d.hasAllot = hasAllot; d.acctInfo = info;
     // execution lines: export (obligations / disbursements) + commitments (commitments report, current FY)
     d.lines = [];
-    rows("export").forEach(function (r) { ciSeen(r.ci); var ac = acctFa(r.fa, unm.fa); d.lines.push({ fy: r.fy || wfy, fm: r.fm || curFm, account: ac, pg: rowPg(ac, r.pg), fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
+    rows("export").forEach(function (r) { ciSeen(r.ci); var ac = acctFa(r.fa, unm.fa); d.lines.push({ fy: r.fy || wfy, fm: r.fm || null, account: ac, pg: rowPg(ac, r.pg), fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
     // commitments report rows: commitments feed execution; obligations feed spending-by-DPC only
     d.dpcLines = [];
     rows("commit").forEach(function (r) {
@@ -373,11 +401,13 @@
     // spend plan: Prioritization -> Account (Spend Plan tab, or an exact account name); several prioritizations add up
     var plan = {};
     rows("plan").forEach(function (r) {
-      var ac = prioMap[an(r.prio)] || names[an(r.prio)]; if (!ac) { unm.prio[r.prio] = (unm.prio[r.prio] || 0) + 1; return; }
+      var ac = (r.prio && (prioMap[an(r.prio)] || names[an(r.prio)])) || (r.acct && (names[an(r.acct)] || addAcct(r.acct))) || "";
+      if (!ac) { var pk = r.prio || r.acct; unm.prio[pk] = (unm.prio[pk] || 0) + 1; ac = UN; }
       var fy = r.fy || wfy, key = fy + "|" + ac, p = plan[key] || (plan[key] = { fy: fy, account: ac, pg: null, m: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], prios: [] });
       for (var i = 0; i < 12; i++) p.m[i] += r.m[i]; p.prios.push(r.prio);
     });
     d.plan = Object.keys(plan).map(function (k) { return plan[k]; });
+    d.planFy = Object.keys(d.plan.reduce(function (o, p) { o[p.fy] = 1; return o; }, {})).sort();
     // unliquidated (FMZ3): Functional Area -> Account (Accounts tab); Order = DPC
     d.ulo = rows("fmz3").map(function (r) {
       var ac = faLookup(r.fa) || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
@@ -385,7 +415,7 @@
       ciSeen(r.ci);
       return Object.assign({}, r, { account: ac, pg: rowPg(ac, G3.pgFromFa(r.fa)), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.ci || r.dt || "Other", desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
     });
-    if ([d.lines, d.ulo, d.dpcLines].some(function (a) { return a.some(function (x) { return x.account === UN; }); })) addAcct(UN);
+    if ([d.lines, d.ulo, d.dpcLines, d.plan].some(function (a) { return a.some(function (x) { return x.account === UN; }); })) addAcct(UN);
     d.accounts = accounts;
     var fys = {}; fys[wfy] = 1; d.lines.forEach(function (l) { if (l.fy) fys[l.fy] = 1; }); d.funding.forEach(function (f) { fys[f.fy] = 1; });
     d.fys = Object.keys(fys).sort();
@@ -407,10 +437,10 @@
     var od = function (l) { return l.oblig + l.disb; };
     d.diag = {
       fundkey: { total: sum(d.funding, function (f) { return f.tdp; }), label: "TDP", unmapped: 0, byFy: byFy(d.funding, function (f) { return f.tdp; }) },
-      export: { total: sum(ex, od), label: "obligations + disbursements", unmapped: sum(ex.filter(function (l) { return l.account === UN; }), od), byFy: byFy(ex, od), why: "Functional Area not on the Accounts tab" },
+      export: { total: sum(ex, od), label: "obligations + disbursements", unmapped: sum(ex.filter(function (l) { return l.account === UN; }), od), byFy: byFy(ex, od), why: "Functional Area not on the Accounts tab", noMonth: sum(ex.filter(function (l) { return !l.fm; }), od), lastFm: G3.curFm ? ex.reduce(function (m, l) { return l.fy === wfy && l.fm > m ? l.fm : m; }, 0) : 0 },
       commit: { total: sum(d.dpcLines, function (x) { return x.amt; }), label: "commitments + obligations", unmapped: sum(d.dpcLines.filter(function (x) { return x.account === UN; }), function (x) { return x.amt; }), why: "Internal Order not on the DPC tab", commit: sum(cm, function (l) { return l.commit; }) },
       fmz3: { total: sum(d.ulo, function (u) { return u.open; }), label: "open", unmapped: 0 },
-      plan: { total: sum(d.plan, function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), label: "planned", unmapped: sum(rows("plan").filter(function (r) { return !(prioMap[an(r.prio)] || names[an(r.prio)]); }), function (r) { return r.m.reduce(function (a, b) { return a + b; }, 0); }), why: "Prioritization not on the Spend Plan tab" }
+      plan: { total: sum(d.plan, function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), label: "planned", unmapped: sum(d.plan.filter(function (p) { return p.account === UN; }), function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), why: "Prioritization not on the Spend Plan tab (and no matching Account)" }
     };
     if (!d.hasAllot && G3.state.view === "allot") G3.state.view = "tdp";
   };
@@ -423,6 +453,6 @@
     export: "contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum (same as Aviation)",
     commit: "Entry Type, Internal Order, Pay Group, Amount (Business, Fund Center, Fund, Fund Code, Functional Area, Cost Center, WBS, Funded Program, Account, SDN, Journal Date also present)",
     fmz3: "Amount Open (TC), Amount Total (TC), Posting Date, Earmarked Funds, Functional Area, Document Header Text, Commitment item, Order (+ the rest of the FMZ3 columns)",
-    plan: "Prioritization, October \u2026 September (all other columns ignored)"
+    plan: "Prioritization (or Account, as on the Aviation/G1 spend plan), October \u2026 September; month headers may be names, dates or Month 1\u201312 (all other columns ignored)"
   };
 })(window);

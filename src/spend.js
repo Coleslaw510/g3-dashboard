@@ -3,11 +3,8 @@
   var G3 = w.G3;
   var M = G3.mods.spend = { ui: { acct: "", mode: "monthly" } };
   // share of the current fiscal month that has elapsed (planned-to-date prorates it)
-  M.monthFrac = function (fy, cur) {
-    var at = G3.asOf(); if (G3.fyOf(at) !== fy) return 1;
-    var fm = (at.getMonth() + 3) % 12 + 1; if (fm !== cur) return 1;
-    var dim = new Date(at.getFullYear(), at.getMonth() + 1, 0).getDate(); return at.getDate() / dim;
-  };
+  // Aviation/G1 rule: to-date figures run through the latest month that has actuals, whole months (no proration)
+  M.monthFrac = function () { return 1; };
   M.calc = function (fy, acctFilter) {
     var cur = G3.curFm(fy), frac = M.monthFrac(fy, cur);
     var accts = G3.data.accounts.filter(function (a) { return !acctFilter || a.id === acctFilter; }).map(function (a) {

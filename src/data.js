@@ -156,4 +156,37 @@
     });
     return [{ name: "G3 Master Key (realistic).xlsx", sheets: mk }, { name: "Status of Funds export (realistic).xlsx", sheets: [{ name: "Sheet1", aoa: out }] }];
   };
+
+  // Cole's real GFEBS Status of Funds export header (the same report the Aviation and G1 dashboards load), all columns in order.
+  G3.GFEBS_COLS = ["contract_doc_no", "commitment_item_fipex", "funds_center_fistl", "functional_area_farea", "appropriation_type", "fiscal_year_period", "fiscal_year_gjahr", "fund_fonds", "fund_type", "fiscal_year", "allotment_amt_cum", "afp_amt_cum", "reference_document_number_refbn", "treasury_account_symbol_main_account_main_acct", "funds_management_update_date_zhldt", "number_that_clearly_identifies_the_line_key_in_database_stunr", "wbs_element_|_posid", "reference_document_category_refbt", "fiscal_year_for_fi_document_number_kngjahr", "obligation_amt_cum", "order_|_aufnr", "cost_collector_type", "functional_cost_account_code", "source_table", "deletion_indicator_loekz", "description_|_post1", "item_for_payment_document_number_vobuzei", "company_code_for_payment_document_number_vobukrs", "application_of_secondary_source_funds_finuse", "period_perio", "attribute2", "predecessor_account_assignment_vrfknt", "description_|_postu", "commitment_item_category_potyp", "payment_document_number_vobelnr", "fiscal_year_for_payment_document_number_vogjahr", "amount_in_fm_area_currency_fkbtr", "fund_description_beschr", "time_of_data_entry_cputm", "unit_identification_code_|_uic", "cost_center_|_kostl", "amount_type_btart", "document_item_for_fi_document_number_knbuzei", "object_number_objnrz", "primary_key", "accounting_document_entry_date_cpudt", "posting_date_in_the_document_budat", "fi_document_number_knbelnr", "commitment_amt_cum", "attribute1", "value_type_wrttp", "description_|_ktext", "attribute4", "attribute3", "account_assignment_number_of_reference_document_rfknt", "funds_management_statistical_indicator_stats", "funded_program_measure", "predecessor_document_item_vrfpos", "fm_fund_type_type", "disbursement_amt_cum", "predecessor_document_number_vrefbn", "predecessor_document_category_vrefbt", "item_number_of_reference_document_rfpos", "organizational_unique_identifier_|_ouid", "expenditure_amt_cum", "wbs_element_|_pspnr", "source_system", "years_of_availability", "supplemental_apportionment_id", "fund_number_charachters", "fund_type_designator", "fiscal_year_of_issue", "fiscal_year_of_funds", "fund_description", "spend_type", "division", "ssn", "cost_type", "line_item_segment", "ape", "project", "fiscal_year_spend_occurred", "fiscal_month", "fiscal_date", "fiscal_period", "fiscal_year_of_expiry", "fiscal_date_of_expiry", "ending_fund_year", "sag", "mdep", "functional_area_description", "budget_activity", "mdep_description", "sag_description", "fund_center_description", "fund_center_l4_description", "fund_center_l3_description", "fund_center_l2_description", "commitment_item_described", "zz_issuing", "zz_req_office", "zz_admin_office", "zz_pay_office", "zz_piin", "zz_spiin", "zz_href", "zz_mod_num", "date_on_which_the_record_was_created_aedat", "purchasing_document_date_bedat", "purchasing_group_description_eknam", "purchasing_document_type_bsart"];
+  // The test export written with that full header. Only the Aviation/G1 columns carry the real values; the look-alike columns
+  // (fiscal_period, period_perio, fiscal_year_gjahr, obligation_amt_cum, expenditure_amt_cum, functional_area_description ...) hold
+  // different numbers on purpose, so a check proves the loader reads the right ones.
+  G3.makeGfebsExport = function () {
+    var ex = G3.makeTestFiles()[1].sheets[0].aoa, H = G3.GFEBS_COLS, at = {}; H.forEach(function (h, i) { at[h] = i; });
+    var out = [H.slice()];
+    ex.slice(1).forEach(function (r, n) {
+      var row = H.map(function () { return null; }), set = function (h, v) { row[at[h]] = v; };
+      set("contract_doc_no", r[0]); set("commitment_item_fipex", r[1]); set("functional_area_farea", r[2]); set("appropriation_type", r[3]);
+      set("fiscal_year", +r[4]); set("fiscal_month", +r[5]); set("commitment_amt_cum", r[6]); set("disbursement_amt_cum", r[7]);
+      set("fiscal_period", (+r[5] + 5) % 12 + 1); set("period_perio", (+r[5] + 3) % 12 + 1); set("fiscal_year_period", "2019" + ("00" + ((+r[5] + 7) % 12 + 1)).slice(-3));
+      set("fiscal_year_gjahr", 2019); set("fiscal_year_of_funds", 2025); set("fiscal_year_spend_occurred", 2024); set("fiscal_year_of_issue", 2023); set("ending_fund_year", 2028);
+      set("obligation_amt_cum", r[6] * 7); set("expenditure_amt_cum", r[6] * 3); set("amount_in_fm_area_currency_fkbtr", 12345.67); set("allotment_amt_cum", -999999); set("afp_amt_cum", -888888);
+      set("functional_area_description", "PAY AND ALLOWANCES " + String(r[2]).slice(-4)); set("commitment_item_described", "Described " + r[1]); set("commitment_item_category_potyp", 3);
+      set("funds_center_fistl", "W7NZAA"); set("fund_fonds", "2060" + r[4]); set("fund_type", "NGPA"); set("order_|_aufnr", "000" + (100000 + n)); set("description_|_post1", "Line " + n);
+      set("sag", "131"); set("mdep", "VTRN"); set("budget_activity", "01"); set("fund_center_description", "G3 TRAINING"); set("source_system", "GFEBS"); set("fiscal_date", "2026-1" + (n % 2) + "-15");
+      set("posting_date_in_the_document_budat", "2019-03-0" + (1 + n % 9)); set("deletion_indicator_loekz", "");
+      out.push(row);
+    });
+    return { name: "Status of Funds export (GFEBS full columns).xlsx", sheets: [{ name: "Sheet1", aoa: out }] };
+  };
+  // Aviation/G1 spend plan layout: Account, then month columns as dates; no Prioritization column.
+  G3.makeAcctPlan = function () {
+    var F = G3.makeTestFiles(), sp = F[4].sheets[0].aoa, key = F[0].sheets.filter(function (s) { return s.name === "Spend Plan"; })[0].aoa, map = {};
+    key.slice(1).forEach(function (r) { map[String(r[0]).toUpperCase()] = r[1]; });
+    var mi = []; sp[0].forEach(function (h, i) { if (/^(October|November|December|January|February|March|April|May|June|July|August|September)$/.test(h)) mi.push(i); });
+    var head = ["Account"].concat(mi.map(function (_, k) { return new Date(2026 + (k >= 3 ? 1 : 0), (9 + k) % 12, 1); }));
+    var acc = {}; sp.slice(1).forEach(function (r) { var a = map[String(r[0]).toUpperCase()]; if (!a) return; var o = acc[a] || (acc[a] = mi.map(function () { return 0; })); mi.forEach(function (c, k) { o[k] += +r[c] || 0; }); });
+    return { name: "Spend plan (Account layout).xlsx", sheets: [{ name: "Plan", aoa: [head].concat(Object.keys(acc).map(function (a) { return [a].concat(acc[a]); })) }] };
+  };
 })(window);

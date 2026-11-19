@@ -11,3 +11,5 @@ const write = (f, dir) => {
 };
 ctx.G3.makeTestFiles().forEach(f => write(f, out));
 ctx.G3.makeMessyFiles().forEach(f => write(f, path.join(out, 'realistic')));
+write(ctx.G3.makeGfebsExport(), path.join(out, 'gfebs'));
+write(ctx.G3.makeAcctPlan(), path.join(out, 'gfebs'));
