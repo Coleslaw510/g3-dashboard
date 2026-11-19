@@ -16,13 +16,14 @@
   G3.makeTestFiles = function () {
     var r = rng(20261119), asOf = new Date(2026, 10, 19), curFm = 2, frac = 19 / 30;
     var ACC = [
-      { a: "IDT", tag: "IDT", tdp: 38.4e6, sag: "135", mdep: "VTRN", pg: [.52, .18, .2, .1], prof: [8, 9, 6, 9, 9, 9, 9, 8, 5, 6, 9, 8], bias: 1.02 },
-      { a: "AT", tag: "RAT", tdp: 24.6e6, sag: "135", mdep: "VTRN", pg: [.48, .22, .2, .1], prof: [1, 1, .6, 1, 1.5, 3, 5, 10, 22, 28, 20, 6], bias: .86 },
-      { a: "SCHOOLS", tag: "SCH", blankPg: true, tdp: 12.9e6, sag: "135", mdep: "VSCH", pg: [.3, .35, .2, .15], prof: [7, 9, 5, 9, 9, 9, 9, 9, 8, 8, 9, 8], bias: 1.08 },
-      { a: "OSS OPS/TRAINING", tag: "MOB", x131: ["131G48MOBX"], x131w: .12, tdp: 6.3e6, sag: "131", mdep: "VMOB", pg: [.25, .2, .45, .1], prof: [4, 4, 6, 10, 12, 10, 8, 8, 10, 12, 10, 6], bias: .95 },
+      { a: "IDT", tag: "IDT", tdp: 38.4e6, sag: "135", mdep: "VTRN", pg: [1, 0, 0, 0], prof: [8, 9, 6, 9, 9, 9, 9, 8, 5, 6, 9, 8], bias: 1.02 },
+      { a: "AT", tag: "RAT", tdp: 24.6e6, sag: "135", mdep: "VTRN", pg: [0, 1, 0, 0], prof: [1, 1, .6, 1, 1.5, 3, 5, 10, 22, 28, 20, 6], bias: .86 },
+      { a: "SCHOOLS", tag: "SCH", blankPg: true, tdp: 12.9e6, sag: "135", mdep: "VSCH", pg: [0, 0, 1, 0], prof: [7, 9, 5, 9, 9, 9, 9, 9, 8, 8, 9, 8], bias: 1.08 },
+      { a: "OSS OPS/TRAINING", tag: "MOB", x131: ["131G48MOBX"], x131w: .12, tdp: 6.3e6, sag: "131", mdep: "VMOB", pg: [0, 0, 1, 0], prof: [4, 4, 6, 10, 12, 10, 8, 8, 10, 12, 10, 6], bias: .95 },
       { a: "ADOS", tag: "ADS", x131: ["131G48ADOS", "131G48ASDF"], x131w: 1, tdp: 9.4e6, sag: "131", mdep: "VADS", pg: [0, 0, 0, 0], prof: [8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9], bias: 1.12 },
       { a: "TRAINING SUPPORT", tag: "TSP", tdp: 4.1e6, sag: "132", mdep: "VTSP", pg: [0, 0, 0, 1], prof: [5, 6, 4, 6, 7, 7, 8, 8, 9, 10, 14, 16], bias: .78 }
     ];
+    // Each account ties to one pay group (Cole's model). OSS OPS/TRAINING also has a 131G FA, so it shows as a key conflict.
     // Functional Areas: pay group (5 digits) + "1B3P" + tag, e.g. 100101B3PRAT -> pay group 10010.  131G... = another appropriation (no pay group)
     ACC.forEach(function (a) {
       var w131 = a.x131w || 0; a.faList = [];
@@ -54,6 +55,7 @@
     var dpcsBy = {}; DPC.forEach(function (g) { g[2].forEach(function (d) { (dpcsBy[g[0]] = dpcsBy[g[0]] || []).push({ code: d[0], desc: d[1], tdc: g[1], sh: d[2] }); }); });
 
     // ---------- master key (4 tabs) ----------
+    var ciTab = [["Commitment Item", "Description"], ["21TD", "DTS travel (TDY)"], ["21T1", "Travel on orders (non-DTS)"], ["21T2", "Travel - lodging & per diem"], ["22P1", "PCS household goods move"], ["2511", "Contracted services"], ["25MI", "MIPR - services from other agencies"], ["26B1", "Supplies & materials"], ["26GP", "GPC card purchases"], ["1121", "Military pay - IDT/AT"]];   // 25G1 left out on purpose: shows as unmapped
     var fundTab = [["Account", "TDP", "AFP", "Allotment", "SAG", "MDEP"]], acctTab = [["Functional Area", "Account"]], dpcTab = [["DPC", "Description", "Account", "TDC"]], spTab = [["Prioritization", "Account"]];
     ACC.forEach(function (a) {
       var prof = norm(a.prof), afp = Math.round(a.tdp * (prof[0] + prof[1] + prof[2]) * 1.12 / 1000) * 1000;
@@ -106,6 +108,7 @@
     var LAST = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS", "RODRIGUEZ", "MARTINEZ", "ANDERSON", "TAYLOR", "THOMAS", "MOORE", "JACKSON", "MARTIN", "LEE", "THOMPSON", "WHITE", "HARRIS", "CLARK", "LEWIS", "ROBINSON", "WALKER"];
     var FIRSTN = ["JOHN", "MARIA", "ROBERT", "SARAH", "DAVID", "EMILY", "JAMES", "ASHLEY", "MICHAEL", "JESSICA", "DANIEL", "LAURA", "KEVIN", "MEGAN", "BRIAN", "NICOLE", "TYLER", "AMANDA"];
     var CIT = [["DTS", 40, 250, 6500, ["SCHOOLS", "AT", "ADOS", "IDT", "OSS OPS/TRAINING"]], ["ORDERS", 24, 1800, 48000, ["AT", "ADOS", "IDT", "OSS OPS/TRAINING", "SCHOOLS"]], ["PR", 14, 900, 85000, ["TRAINING SUPPORT", "AT", "ADOS"]], ["PCS", 5, 4500, 26000, ["OSS OPS/TRAINING", "ADOS"]], ["GPC", 11, 90, 3200, ["TRAINING SUPPORT", "AT", "IDT"]], ["MIPR", 6, 12000, 160000, ["TRAINING SUPPORT", "OSS OPS/TRAINING"]]];
+    var FCI = { DTS: "21TD", ORDERS: "21T1", PR: "26B1", PCS: "22P1", GPC: "26GP", MIPR: "25MI" };
     var accBy = {}; ACC.forEach(function (a) { accBy[a.a] = a; });
     for (var i = 0; i < 250; i++) {
       var t = pick(r, CIT, CIT.map(function (c) { return c[1]; })), a = accBy[pick(r, t[4])], d = pick(r, dpcsBy[a.a]);
@@ -114,7 +117,7 @@
       var ln = pick(r, LAST), fn = pick(r, FIRSTN), styles = ["TRAVELER:" + ln + fn, "traveler:" + (ln + fn).toLowerCase(), "TRAVELER: " + ln + " " + fn, "Traveler:" + ln + ", " + fn];
       var hdr = t[0] === "DTS" ? pick(r, styles) : t[0] === "ORDERS" ? a.a + " ORDERS " + pick(r, ["1-133 IN", "2-34 BCT", "JFHQ", "185 ENG", "HHC 1BCT"]) : t[0] === "PR" ? "PR " + d.desc.toUpperCase().slice(0, 24) : t[0] === "PCS" ? "PCS MOVE " + ln : t[0] === "GPC" ? "GPC TRAINING SUPPLIES" : "MIPR " + d.desc.toUpperCase().slice(0, 20);
       var fmz = "0" + String(300000000 + Math.floor(r() * 9e7));
-      fz.push([t[0] === "PR" || t[0] === "MIPR" ? "FMZ" : "ZT", "61" + Math.floor(r() * 9e5 + 1e5), t[0] === "DTS" ? "T" + Math.floor(r() * 9e6 + 1e6) : "R" + Math.floor(r() * 9e6 + 1e6), open, total, iso(dt), iso(new Date(dt.getTime() - Math.floor(r() * 9) * 864e5)), fmz, "2027OMNG", pickFa(r, a).fa, "NGIA" + a.sag, "W8AL" + Math.floor(10 + r() * 4), d.code, t[0] === "PR" || t[0] === "MIPR" ? pick(r, ["ACME TRAINING LLC", "HAWKEYE RANGE SVCS", "PRAIRIE BUS CO"]) : "", hdr, "USER" + Math.floor(r() * 90 + 10), open, "", "", "", "USD", "NG00", t[0], ""]);
+      fz.push([t[0] === "PR" || t[0] === "MIPR" ? "FMZ" : "ZT", "61" + Math.floor(r() * 9e5 + 1e5), t[0] === "DTS" ? "T" + Math.floor(r() * 9e6 + 1e6) : "R" + Math.floor(r() * 9e6 + 1e6), open, total, iso(dt), iso(new Date(dt.getTime() - Math.floor(r() * 9) * 864e5)), fmz, "2027OMNG", pickFa(r, a).fa, "NGIA" + a.sag, "W8AL" + Math.floor(10 + r() * 4), d.code, t[0] === "PR" || t[0] === "MIPR" ? pick(r, ["ACME TRAINING LLC", "HAWKEYE RANGE SVCS", "PRAIRIE BUS CO"]) : "", hdr, "USER" + Math.floor(r() * 90 + 10), open, "", "", "", "USD", "NG00", FCI[t[0]], ""]);
     }
 
     // ---------- spend plan (only Prioritization + Oct..Sep are read) ----------
@@ -126,7 +129,7 @@
     sp.push(["Total", "", "", ""].concat([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""]));
 
     return [
-      { name: "G3 Master Key.xlsx", sheets: [{ name: "Funding", aoa: fundTab }, { name: "Accounts", aoa: acctTab }, { name: "DPC", aoa: dpcTab }, { name: "Spend Plan", aoa: spTab }] },
+      { name: "G3 Master Key.xlsx", sheets: [{ name: "Funding", aoa: fundTab }, { name: "Accounts", aoa: acctTab }, { name: "DPC", aoa: dpcTab }, { name: "Spend Plan", aoa: spTab }, { name: "Commitment Item", aoa: ciTab }] },
       { name: "Status of Funds export.xlsx", sheets: [{ name: "Export", aoa: ex }] },
       { name: "Checkbook Drill Down - Commitments.xlsx", sheets: [{ name: "Sheet1", aoa: cm }] },
       { name: "FMZ3 Unliquidated.xlsx", sheets: [{ name: "Sheet1", aoa: fz }] },

@@ -68,7 +68,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
       expPg: d.lines.filter(l => l.src === 'export' && l.pg).length, exp131: d.lines.filter(l => l.src === 'export' && l.pg === '').length,
       uloPg: d.ulo.filter(u => u.pg).length, ulo131: d.ulo.filter(u => u.pg === '').length, allU, all131, u10n: u10.length, u10bad: u10.filter(u => u.pg !== '10010').length,
       L10bad: L10.filter(l => l.pg !== '10010').length, L10n: L10.length,
-      fundPg: d.funding.filter(f => f.fy === cur).map(f => f.account + '=' + f.pg).join(' '), F10: F10.map(f => f.account).join(','), split: d.fundSplit.join(','),
+      fundPg: d.funding.filter(f => f.fy === cur).map(f => f.account + '=' + f.pg).join(' '), F10: F10.map(f => f.account).join(','),
       schBlankCol: schRaw.length && schRaw.every(x => x.pg === x.fa.slice(0, 5)),
       a1: f1 ? (f1.report || f1).hasAllot : 'nf', a1v: f1 ? (f1.rows || [])[0] && f1.rows[0].allot : null, a2: f2 ? (f2.rows || [])[0] && f2.rows[0].allot : null, a2note: f2 ? JSON.stringify((f2.report || {}).notes) : '',
       hasAllot: d.hasAllot, allotTot: Math.round(G3.sum(d.funding.filter(f => f.fy === cur), 'allot')),
@@ -79,7 +79,28 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(q.pg.join() === '10010,,10070,,', 'pay group from Functional Area: 100101B3PRAT->10010, 131G48ASDF->none');
   ok(q.expPg > 0 && q.exp131 > 0 && q.uloPg > 0 && q.ulo131 > 0, 'export + FMZ3 rows get pay groups; 131G rows get none');
   ok(q.all131 > 0 && q.u10n > 0 && q.u10bad === 0 && q.L10bad === 0, 'pay group filter: 131G rows only under All; 10010 filter keeps only 10010 lines (Unliquidated too)');
-  ok(/TRAINING SUPPORT=10090/.test(q.fundPg) && /ADOS=(\s|$)/.test(q.fundPg + ' ') && /IDT=null/.test(q.fundPg) && !/ADOS|TRAINING SUPPORT/.test(q.F10) && /IDT/.test(q.F10), 'funding by pay group only for single-pay-group accounts (' + q.fundPg + ')');
+  ok(q.fundPg === 'IDT=10010 AT=10070 SCHOOLS=10080 OSS OPS/TRAINING=10080 ADOS= TRAINING SUPPORT=10090' && q.F10 === 'IDT', 'funding pay group per account from its Functional Areas (' + q.fundPg + ')');
+  const h = await p.evaluate(() => {
+    const cur = G3.fyOf(G3.asOf()), out = {};
+    G3.state.pg = 'All'; const all = G3.totals(G3.lines(cur), G3.funding(cur));
+    let sum = 0;
+    G3.PAYGROUPS.concat(['']).forEach(pg => { G3.state.pg = 'All'; const f = G3.funding(cur, x => x.pg === pg), l = G3.lines(cur, x => x.pg === pg); sum += G3.sum(f, 'tdp'); });
+    G3.state.pg = '10080'; const T = G3.totals(G3.lines(cur), G3.funding(cur));
+    const exp8 = G3.data.funding.filter(f => f.fy === cur && (f.account === 'SCHOOLS' || f.account === 'OSS OPS/TRAINING')).reduce((a, f) => a + f.tdp, 0);
+    const ex8 = G3.data.lines.filter(l => l.fy === cur && l.pg === '10080').reduce((a, l) => a + l.commit + l.oblig + l.disb, 0);
+    location.hash = '#/sof'; G3.refresh(); const kpi = document.querySelector('#page-sof .kpi .val').textContent;
+    G3.state.pg = 'All'; G3.refresh(); const dtext = (G3.renderDrawer(), document.getElementById('dUnmapped').textContent);
+    return { allTdp: all.tdp, sumByPg: sum, lvl: T.level, exp8, bal: Math.round(T.bal), expBal: Math.round(exp8 - ex8), kpi, money: G3.money(exp8), conflict: /Key conflicts:.*OSS OPS\/TRAINING.*counted under 10080/.test(dtext) };
+  });
+  console.log(JSON.stringify(h));
+  ok(Math.round(h.allTdp) === Math.round(h.sumByPg), 'TDP by pay group (incl. no pay group) adds back to the All total');
+  ok(h.lvl === h.exp8 && h.bal === h.expBal && h.kpi === h.money, 'pay group 10080: TDP = SCHOOLS + OSS OPS/TRAINING, balance = TDP - 10080 execution, card shows it (' + h.kpi + ')');
+  ok(h.conflict, 'account with Functional Areas in two pay groups listed as a key conflict');
+  const ci = await p.evaluate(() => ({ key: G3.data.sets.cikey && G3.data.sets.cikey.rows.length, kind: G3.parseWorkbook('x.xlsx', [{ name: 'S', aoa: [['Commitment Item', 'Description'], ['21TD', 'DTS travel']] }])[0].kind, name: G3.ciName('21TD'), unm: Object.keys(G3.data.unmapped.ci), html: (location.hash = '#/ulo', G3.refresh(), document.querySelector('#page-ulo td.cic').innerHTML), opt: document.querySelector('#page-ulo select[data-ui="ci"]').textContent }));
+  console.log(JSON.stringify(ci));
+  ok(ci.key === 9 && ci.kind === 'cikey' && ci.name === 'DTS travel (TDY)', 'Commitment Item tab detected by headers and loaded');
+  ok(/cicode/.test(ci.html) && /DTS travel|Travel on orders|Supplies|GPC|MIPR|PCS/.test(ci.html) && /DTS travel \(TDY\) \(21TD\)/.test(ci.opt), 'commitment item descriptions shown (code secondary) in table and filter');
+  ok(ci.unm.join() === '25G1', 'unmapped commitment item listed (' + ci.unm.join() + ')');
   ok(q.schBlankCol, 'commitments with blank Pay Group column take pay group from Functional Area');
   ok(q.a1 === true && q.a1v === 45 && q.a2 === 45 && /right of AFP/.test(q.a2note) && q.hasAllot && q.allotTot > 0, 'Allotment parsed (header, and odd header right of AFP)');
   ok(q.commitFm === 0 && q.monthCommit, 'commitments are upcoming (no month), not in monthly actuals');
@@ -90,7 +111,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(/FMZ number/i.test(det) && /\d{6,}/.test(det), 'FMZ number shown in expanded row: ' + det.slice(0, 80).replace(/\s+/g, ' '));
   // drawer text
   await p.click('#btnInfo'); await p.waitForTimeout(200);
-  const dtext = await p.textContent('#drawer'); ok(/obligation rows loaded for spending-by-DPC/i.test(dtext) && /NGZZ99/.test(dtext), 'drawer shows obligation count and unmapped DPC');
+  const dtext = await p.textContent('#drawer'); ok(/obligation rows loaded for spending-by-DPC/i.test(dtext) && /NGZZ99/.test(dtext) && /25G1/.test(dtext), 'drawer shows obligation count and unmapped DPC');
   await p.click('#btnClose');
   // ---- upload samples through the UI ----
   const files = fs.readdirSync(path.join(__dirname, 'samples')).map(f => path.join(__dirname, 'samples', f));
@@ -102,7 +123,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   // partial upload replaces only its dataset
   const before = await p.evaluate(() => G3.data.sets.commit.at);
   await p.setInputFiles('#fileInput', [path.join(__dirname, 'samples', 'FMZ3 Unliquidated.xlsx')]); await p.waitForTimeout(1200);
-  ok(await p.evaluate(b => G3.data.sets.commit.at === b && Object.keys(G3.data.sets).length === 8, before), 'partial upload (FMZ3 only) left other datasets in place');
+  ok(await p.evaluate(b => G3.data.sets.commit.at === b && Object.keys(G3.data.sets).length === 9, before), 'partial upload (FMZ3 only) left other datasets in place');
   for (const t of ['home', 'sof', 'spend', 'ulo', 'idt', 'at', 'sch', 'mob']) { await p.evaluate(t => G3.go(t), t); await p.waitForTimeout(250); }
   // save with data round trip
   const [dl] = await Promise.all([p.waitForEvent('download'), p.evaluate(() => document.getElementById('btnSave').click())]);

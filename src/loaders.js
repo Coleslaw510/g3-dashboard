@@ -98,11 +98,12 @@
   var FUND_COLS = [["fy", "Fiscal Year", ["fiscalyear", "fy"]], ["acct", "Account", ACCT_AL], ["tdp", "TDP", []], ["afp", "AFP", []], ["allot", "Allotment", ["allotment", "allot", "allotted", "allotmentamt", "allotmentamount", "allotments"]], ["sag", "SAG", []], ["mdep", "MDEP", []]];
   var AKEY_COLS = [["fa", "Functional Area", FA_AL], ["acct", "Account", ACCT_AL], ["sag", "Sag", []], ["mdep", "MDEP", []]];
   var DKEY_COLS = [["dpc", "DPC", ["dpc", "internalorder", "dpccode"]], ["desc", "Description", ["description", "desc", "dpcdescription"]], ["acct", "Account", ACCT_AL], ["tdc", "TDC", ["tdc"]]];
+  var CKEY_COLS = [["ci", "Commitment Item", ["commitmentitem", "commitmentitemfipex", "commititem", "ci"]], ["desc", "Description", ["description", "desc", "commitmentitemdescription", "cidescription"]]];
   var SKEY_COLS = [["prio", "Prioritization", ["prioritization", "priority", "prioritisation"]], ["acct", "Account", ACCT_AL]];
-  var A = { export: aliasMap(EXPORT_COLS), commit: aliasMap(COMMIT_COLS), fmz3: aliasMap(FMZ_COLS), fundkey: aliasMap(FUND_COLS), acctkey: aliasMap(AKEY_COLS), dpckey: aliasMap(DKEY_COLS), spkey: aliasMap(SKEY_COLS) };
+  var A = { export: aliasMap(EXPORT_COLS), commit: aliasMap(COMMIT_COLS), fmz3: aliasMap(FMZ_COLS), fundkey: aliasMap(FUND_COLS), acctkey: aliasMap(AKEY_COLS), dpckey: aliasMap(DKEY_COLS), spkey: aliasMap(SKEY_COLS), cikey: aliasMap(CKEY_COLS) };
   function monthOf(h) { var s = norm(h).replace(/^(fy\d{2,4})/, ""), m = s.match(/^(oct|nov|dec|jan|feb|mar|apr|may|jun|jul|aug|sep)/); if (!m) return 0; if (/^(total|actual|obl)/.test(s)) return 0; return MON_FM[m[1]]; }
-  G3.KIND_LABEL = { fundkey: "Funding key", acctkey: "Account key", dpckey: "DPC key", spkey: "Spend plan key", export: "Status of Funds export", commit: "Commitments report", fmz3: "FMZ3 unliquidated", plan: "Spend plan" };
-  G3.KIND_ORDER = ["fundkey", "acctkey", "dpckey", "spkey", "export", "commit", "fmz3", "plan"];
+  G3.KIND_LABEL = { fundkey: "Funding key", acctkey: "Account key", dpckey: "DPC key", spkey: "Spend plan key", cikey: "Commitment item key", export: "Status of Funds export", commit: "Commitments report", fmz3: "FMZ3 unliquidated", plan: "Spend plan" };
+  G3.KIND_ORDER = ["fundkey", "acctkey", "dpckey", "spkey", "cikey", "export", "commit", "fmz3", "plan"];
 
   // ---------- which kind of sheet is this? (header row, not file name) ----------
   function classify(src) {
@@ -117,6 +118,7 @@
       else if (EXPORT_ONLY.some(function (x) { return H[x]; })) k = "export";
       else if (has("prioritization", "priority", "prioritisation") && nMon >= 6) k = "plan";
       else if (has("prioritization", "priority", "prioritisation") && has.apply(null, ACCT_AL)) k = "spkey";
+      else if (has("commitmentitem", "commititem") && has("description", "desc", "commitmentitemdescription") && !has("dpc", "internalorder", "tdc") && !has.apply(null, ACCT_AL)) k = "cikey";
       else if (has("tdc") || (has("dpc", "internalorder") && has("description", "desc", "dpcdescription"))) k = "dpckey";
       else if (has("tdp", "afp") && has.apply(null, ACCT_AL)) k = "fundkey";
       else if (has.apply(null, FA_AL) && has.apply(null, ACCT_AL)) k = "acctkey";
@@ -216,6 +218,11 @@
     if (hm.map.dpc == null) { rep.fatal = "The DPC key needs a DPC column."; return { rows: [], report: rep }; }
     return { rows: rowsOf(src, hm, function (raw) { var d = idText(raw.dpc); if (!d) { skip(rep, "no DPC"); return null; } return { dpc: d, desc: txt(raw.desc), acct: txt(raw.acct).replace(/\s+/g, " "), tdc: txt(raw.tdc) }; }, rep), report: rep };
   };
+  P.cikey = function (src) {
+    var hm = mapHeaders(src, A.cikey), rep = rep0("cikey", hm);
+    if (hm.map.ci == null || hm.map.desc == null) { rep.fatal = "The commitment item key needs Commitment Item and Description columns."; return { rows: [], report: rep }; }
+    return { rows: rowsOf(src, hm, function (raw) { var c = idText(raw.ci), d = txt(raw.desc); if (!c || !d) { skip(rep, "missing Commitment Item or Description"); return null; } return { ci: c, desc: d }; }, rep), report: rep };
+  };
   P.spkey = function (src) {
     var hm = mapHeaders(src, A.spkey), rep = rep0("spkey", hm);
     return { rows: rowsOf(src, hm, function (raw) { var p = txt(raw.prio), ac = txt(raw.acct).replace(/\s+/g, " "); if (!p || !ac) { skip(rep, "missing Prioritization or Account"); return null; } return { prio: p, acct: ac }; }, rep), report: rep };
@@ -285,20 +292,31 @@
   // Anything else (e.g. 131G48ASDF) is another appropriation: no pay group ("").
   G3.pgFromFa = function (fa) { var m = String(fa == null ? "" : fa).trim().match(/^(\d{5})/); return m ? m[1] : ""; };
   G3.derive = function () {
+    G3.dataVer = (G3.dataVer || 0) + 1;
     var d = G3.data, S = d.sets, cur = G3.fyOf(G3.asOf()), curFm = (G3.asOf().getMonth() + 3) % 12 + 1;
     var rows = function (k) { return S[k] ? S[k].rows : []; };
-    var names = {}, accounts = [], unm = { fa: {}, dpc: {}, prio: {}, fmzFa: {} };
+    var names = {}, accounts = [], unm = { fa: {}, dpc: {}, prio: {}, fmzFa: {}, ci: {} };
     function addAcct(ac) { var k = an(ac); if (!k) return ""; if (!names[k]) { names[k] = ac; accounts.push({ id: ac, name: ac, program: G3.programOf(ac) }); } return names[k]; }
     var faMap = {}, info = {};
     rows("fundkey").forEach(function (r) { addAcct(r.acct); });
     rows("acctkey").forEach(function (r) { var ac = addAcct(r.acct); if (!faMap[kn(r.fa)]) faMap[kn(r.fa)] = ac; });
     // pay groups per account, from the Functional Areas mapped to it on the Accounts tab
     var acctPgs = {}; rows("acctkey").forEach(function (r) { var k = an(r.acct), o = acctPgs[k] || (acctPgs[k] = {}); o[G3.pgFromFa(r.fa)] = 1; });
-    // funding pay group: the one pay group an account maps to; "" if it only has non-pay-group FAs; null (= shown under every pay group) if it spans several
-    function fundPg(ac) { var o = acctPgs[an(ac)]; if (!o) return null; var k = Object.keys(o); return k.length === 1 ? k[0] : null; }
+    // account pay group: the pay group of its Functional Areas; several -> the one with most FAs (first on ties), listed as a key conflict.
+    // Only non-pay-group FAs (131...) -> "" (counts under All only). Account not on the Accounts tab -> null (can't be split; shown under every pay group).
+    var acctPgOrder = {}; rows("acctkey").forEach(function (r) { var k = an(r.acct), p = G3.pgFromFa(r.fa), o = acctPgOrder[k] || (acctPgOrder[k] = []); if (o.indexOf(p) < 0) o.push(p); });
+    function fundPg(ac) {
+      var o = acctPgs[an(ac)]; if (!o) return null;
+      var cnt = {}; rows("acctkey").forEach(function (r) { if (an(r.acct) === an(ac)) { var p = G3.pgFromFa(r.fa); cnt[p] = (cnt[p] || 0) + 1; } });
+      var best = null; acctPgOrder[an(ac)].forEach(function (p) { if (p && (best == null || cnt[p] > cnt[best])) best = p; });
+      return best != null ? best : "";
+    }
     var dpcMap = {}; d.dpcs = [];
     rows("dpckey").forEach(function (r) { var ac = r.acct ? addAcct(r.acct) : ""; var k = kn(r.dpc); if (dpcMap[k]) return; dpcMap[k] = { code: r.dpc, name: r.desc || r.dpc, account: ac, tdc: r.tdc || "No TDC" }; d.dpcs.push(dpcMap[k]); });
     var prioMap = {}; rows("spkey").forEach(function (r) { prioMap[an(r.prio)] = addAcct(r.acct); });
+    d.ciMap = {}; rows("cikey").forEach(function (r) { if (!d.ciMap[kn(r.ci)]) d.ciMap[kn(r.ci)] = r.desc; });
+    var hasCi = !!S.cikey;
+    function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
     var UN = "Unmapped";
     function acctFa(fa, bucket) { var a = faMap[kn(fa)]; if (a) return a; if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
     // funding (no Fiscal Year column = current fiscal year)
@@ -308,7 +326,7 @@
     d.hasAllot = hasAllot; d.acctInfo = info;
     // execution lines: export (obligations / disbursements) + commitments (commitments report, current FY)
     d.lines = [];
-    rows("export").forEach(function (r) { d.lines.push({ fy: r.fy || cur, fm: r.fm || curFm, account: acctFa(r.fa, unm.fa), pg: r.pg, fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
+    rows("export").forEach(function (r) { ciSeen(r.ci); d.lines.push({ fy: r.fy || cur, fm: r.fm || curFm, account: acctFa(r.fa, unm.fa), pg: r.pg, fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
     // commitments report rows: commitments feed execution; obligations feed spending-by-DPC only
     d.dpcLines = [];
     rows("commit").forEach(function (r) {
@@ -330,7 +348,8 @@
     d.ulo = rows("fmz3").map(function (r) {
       var ac = faMap[kn(r.fa)] || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
       if (!ac) { if (r.fa) unm.fmzFa[r.fa] = (unm.fmzFa[r.fa] || 0) + 1; ac = UN; }
-      return Object.assign({}, r, { account: ac, pg: G3.pgFromFa(r.fa), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.traveler ? "DTS" : (r.ci || r.dt || "Other"), desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
+      ciSeen(r.ci);
+      return Object.assign({}, r, { account: ac, pg: G3.pgFromFa(r.fa), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.ci || r.dt || "Other", desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
     });
     if ([d.lines, d.ulo, d.dpcLines].some(function (a) { return a.some(function (x) { return x.account === UN; }); })) addAcct(UN);
     d.accounts = accounts;
@@ -345,7 +364,8 @@
     var XC = ["#0891b2", "#db2777", "#65a30d", "#a16207", "#4338ca"], xi = 0; G3.PAYGROUPS.forEach(function (p) { if (!G3.PGCOL[p]) G3.PGCOL[p] = XC[xi++ % XC.length]; });
     if (G3.state.pg !== "All" && G3.PAYGROUPS.indexOf(G3.state.pg) < 0) G3.state.pg = "All";
     // accounts whose funding can't be split by pay group (FAs in several pay groups)
-    d.fundSplit = accounts.map(function (a) { var o = acctPgs[an(a.id)]; return { name: a.name, pgs: o ? Object.keys(o) : [] }; }).filter(function (x) { return x.pgs.length > 1; }).map(function (x) { return x.name; });
+    d.acctPg = {}; accounts.forEach(function (a) { d.acctPg[a.id] = fundPg(a.id); });
+    d.pgConflicts = accounts.map(function (a) { var o = acctPgOrder[an(a.id)] || []; return { name: a.name, pgs: o, used: d.acctPg[a.id] }; }).filter(function (x) { return x.pgs.length > 1; });
     if (d.fys.indexOf(G3.state.fy) < 0) G3.state.fy = cur;
     if (!d.hasAllot && G3.state.view === "allot") G3.state.view = "tdp";
   };
@@ -353,6 +373,7 @@
     fundkey: "Account, TDP, AFP, Allotment (right of AFP), SAG, MDEP (optional: Fiscal Year)",
     acctkey: "Functional Area, Account",
     dpckey: "DPC, Description, Account, TDC",
+    cikey: "Commitment Item, Description",
     spkey: "Prioritization, Account",
     export: "contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum (same as Aviation)",
     commit: "Entry Type, Internal Order, Pay Group, Amount (Business, Fund Center, Fund, Fund Code, Functional Area, Cost Center, WBS, Funded Program, Account, SDN, Journal Date also present)",

@@ -87,3 +87,7 @@ tr.uldet td{background:#f8fafc}
 .loadreport code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.78rem}
 .loadreport .ok{color:#15803d}.loadreport .err{color:#b91c1c}
 td .warn,.loadreport .warn{color:#b45309}
+.cicode{font-size:.68rem;color:#94a3b8;font-family:ui-monospace,Menlo,monospace;white-space:nowrap}
+td.cic{white-space:nowrap}
+.kpi.hid .val{color:#94a3b8}
+.detgrid div{min-width:0}.detgrid b{overflow-wrap:anywhere}

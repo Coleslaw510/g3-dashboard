@@ -47,13 +47,26 @@
   // pay group on a row: "10010" etc. = that pay group; "" = no pay group (Functional Area not 5 digits, e.g. 131G..., another appropriation: shown under All only);
   // null = the dataset can't be split by pay group (spend plan; funding for an account whose FAs span several pay groups): shown under every pay group
   G3.pgOk = function (pg) { return G3.state.pg === "All" || pg == null || pg === G3.state.pg; };
+  // ---------- per-load caches (perf): keyed on the current arrays, so a new upload / derive rebuilds them ----------
+  function memo(name, src, build) { var c = G3._memo || (G3._memo = {}); if (!c[name] || c[name].src !== src) c[name] = { src: src, v: build() }; return c[name].v; }
+  G3.memo = memo;
+  G3.ciName = function (c) { var m = memo("ci", G3.data.ciMap, function () { return {}; }); if (!(c in m)) m[c] = (G3.data.ciMap || {})[G3.util.kn(c)] || ""; return m[c]; };
+  G3.ciLabel = function (c) { return G3.ciName(c) || c || ""; };
+  G3.ciCol = function (c) { var X = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#64748b", "#0891b2", "#65a30d", "#a16207", "#4338ca"], h = 0, s = String(c || ""); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return X[h % X.length]; };
+  G3.ciPill = function (c) { var n = G3.ciName(c); return '<span class="cipill" style="--cc:' + G3.ciCol(c) + '" title="Commitment item ' + G3.esc(c) + '">' + G3.esc(n || c) + "</span>" + (n ? ' <span class="cicode">' + G3.esc(c) + "</span>" : ""); };
   G3.pgCol = function (p) { var X = ["#0891b2", "#db2777", "#65a30d", "#a16207", "#4338ca"]; return G3.PGCOL[p] || X[Math.abs(+p || 0) % X.length]; };
   G3.acct = function (id) { for (var i = 0; i < G3.data.accounts.length; i++) if (G3.data.accounts[i].id === id) return G3.data.accounts[i]; return { id: id, name: id }; };
-  G3.dpcInfo = function (code) { var k = G3.util.kn(code); for (var i = 0; i < G3.data.dpcs.length; i++) if (G3.util.kn(G3.data.dpcs[i].code) === k) return G3.data.dpcs[i]; return null; };
+  G3.dpcInfo = function (code) {
+    var ix = memo("dpc", G3.data.dpcs, function () { var o = { byK: {}, byRaw: {} }; G3.data.dpcs.forEach(function (d) { var k = G3.util.kn(d.code); if (!(k in o.byK)) o.byK[k] = d; }); return o; });
+    if (code in ix.byRaw) return ix.byRaw[code];
+    return (ix.byRaw[code] = ix.byK[G3.util.kn(code)] || null);
+  };
   G3.dpcName = function (code) { var d = G3.dpcInfo(code); return d ? d.name : ""; };
   G3.sum = function (rows, f) { var s = 0; for (var i = 0; i < rows.length; i++) s += (typeof f === "function" ? f(rows[i]) : rows[i][f]) || 0; return s; };
   G3.group = function (rows, key) { var o = {}; rows.forEach(function (r) { var k = typeof key === "function" ? key(r) : r[key]; (o[k] = o[k] || []).push(r); }); return o; };
-  G3.lines = function (fy, extra) { return G3.data.lines.filter(function (l) { return l.fy === fy && G3.pgOk(l.pg) && (!extra || extra(l)); }); };
+  G3.linesFy = function (fy) { var ix = memo("fy", G3.data.lines, function () { var o = {}; G3.data.lines.forEach(function (l) { (o[l.fy] = o[l.fy] || []).push(l); }); return o; }); return ix[fy] || []; };
+  G3.lines = function (fy, extra) { return G3.linesFy(fy).filter(function (l) { return G3.pgOk(l.pg) && (!extra || extra(l)); }); };
+  // funding carries its account's pay group (Accounts tab), so it filters like everything else
   G3.funding = function (fy, extra) { return G3.data.funding.filter(function (f) { return f.fy === fy && G3.pgOk(f.pg) && (!extra || extra(f)); }); };
   G3.plans = function (fy, extra) { return G3.data.plan.filter(function (p) { return p.fy === fy && G3.pgOk(p.pg) && (!extra || extra(p)); }); };
   G3.planMonths = function (rows) { var m = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; rows.forEach(function (p) { for (var i = 0; i < 12; i++) m[i] += p.m[i] || 0; }); return m; };
@@ -100,8 +113,9 @@
     if (G3.state.pg === "All") return "";
     var parts = ["Pay group " + G3.esc(G3.state.pg) + " = Functional Areas starting " + G3.esc(G3.state.pg) + ". Lines with a non-pay-group Functional Area (e.g. 131G\u2026) show only under All."];
     if (what !== "ulo") {
-      var fs = G3.data.fundSplit || [];
-      if (fs.length) parts.push("TDP/AFP/Allotment for " + fs.map(G3.esc).join(", ") + " can\u2019t be split by pay group (Functional Areas in several pay groups), so their full funding level is shown.");
+      var cf = G3.data.pgConflicts || [];
+      parts.push("Funding (TDP/AFP/Allotment) follows each account\u2019s pay group from the Accounts tab.");
+      if (cf.length) parts.push(cf.length + " account" + (cf.length > 1 ? "s map" : " maps") + " to more than one pay group; see Data details.");
       parts.push("The spend plan has no pay group and is shown in full.");
     }
     return '<div class="pgnote">' + parts.join(" ") + "</div>";
@@ -112,7 +126,7 @@
     var by = {};
     (G3.data.dpcLines || []).forEach(function (x) {
       if (!G3.pgOk(x.pg) || (filter && !filter(x))) return;
-      var k = G3.util.kn(x.dpc) || "(none)", inf = G3.dpcInfo(x.dpc);
+      var inf = G3.dpcInfo(x.dpc), k = inf ? "#" + inf.code : (x.dpc ? "?" + x.dpc : "(none)");
       var o = by[k] || (by[k] = { code: x.dpc || "(none)", name: inf ? inf.name : (x.dpc ? x.dpc + " (not in DPC key)" : "No Internal Order"), tdc: inf ? inf.tdc : "Not in DPC key", account: x.account, commit: 0, oblig: 0, total: 0, n: 0 });
       o[x.type] += x.amt; o.total += x.amt; o.n++;
     });
@@ -134,7 +148,11 @@
     });
     root.querySelectorAll("select[data-st]").forEach(function (s) { s.addEventListener("change", function () { G3.state[s.getAttribute("data-st")] = s.value; G3.refresh(); }); });
     root.querySelectorAll("select[data-ui],input[data-ui]").forEach(function (s) {
-      s.addEventListener(s.tagName === "INPUT" ? "input" : "change", function () { mod.ui[s.getAttribute("data-ui")] = s.value; if (mod.ui.page != null) mod.ui.page = 0; mod.render(s.tagName === "INPUT" ? s.getAttribute("data-ui") : null); });
+      var tmr;
+      s.addEventListener(s.tagName === "INPUT" ? "input" : "change", function () {
+        var go = function () { mod.ui[s.getAttribute("data-ui")] = s.value; if (mod.ui.page != null) mod.ui.page = 0; mod.render(s.tagName === "INPUT" ? s.getAttribute("data-ui") : null); };
+        if (s.tagName === "INPUT") { clearTimeout(tmr); tmr = setTimeout(go, 160); } else go();   // typing: redraw once the user pauses
+      });
     });
   };
   G3.track = function (frac, color, marker, mlabel) {
@@ -153,7 +171,7 @@
     if (!w.Chart) return;
     Chart.defaults.color = "#475569"; Chart.defaults.borderColor = "#e2e8f0";
     Chart.defaults.font.family = getComputedStyle(document.body).fontFamily; Chart.defaults.font.size = 11.5;
-    Chart.defaults.animation.duration = 300; Chart.defaults.maintainAspectRatio = false;
+    Chart.defaults.animation = false; Chart.defaults.maintainAspectRatio = false;
     Chart.defaults.plugins.legend.labels.boxWidth = 10; Chart.defaults.plugins.legend.labels.boxHeight = 10; Chart.defaults.plugins.legend.labels.usePointStyle = true;
     Chart.defaults.plugins.legend.position = "bottom";
   }
@@ -168,11 +186,15 @@
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-go") === p); });
     render(p); w.scrollTo(0, 0);
   }
-  function render(p) {
+  G3.dataVer = 0;
+  function render(p, force) {
     var m = G3.mods[p]; if (!m) return;
+    var key = JSON.stringify([G3.dataVer, G3.state, m.ui]);
+    if (!force && m._key === key && $("page-" + p).firstChild) return;   // page already shows exactly this; keep its DOM and charts
+    m._key = key;
     try { m.render(); } catch (e) { console.error(e); $("page-" + p).innerHTML = '<div class="nodata">Could not draw this page: ' + G3.esc(e.message) + "</div>"; }
   }
-  G3.refresh = function () { render(page()); headerState(); };
+  G3.refresh = function () { render(page(), true); headerState(); };
   function headerState() {
     $("asOf").textContent = G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) : "";
     $("btnSave").disabled = false;
@@ -186,6 +208,7 @@
   }
   G3.ingest = ingest;
   function loadFiles(list) {
+    if (!w.XLSX) { var lz = $("xlsxLazy"); if (lz) { var sc = document.createElement("script"); sc.textContent = lz.textContent; document.head.appendChild(sc); sc.remove(); } }
     if (!w.XLSX) { G3.toast("Excel reader not available.", true); return; }
     var files = Array.prototype.slice.call(list || []), done = [], miss = [], fatal = [];
     (function next() {
@@ -248,13 +271,14 @@
       (rp.notes || []).forEach(function (n) { notes.push(esc(n)); });
       return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";
     }).join("");
-    var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"]];
+    var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"], ["ci", "Commitment items (export / FMZ3) missing from the Commitment Item tab"]];
     var um = lists.filter(function (l) { return u[l[0]] && Object.keys(u[l[0]]).length; }).map(function (l) { return "<p><strong>" + l[1] + ":</strong> " + Object.keys(u[l[0]]).map(function (x) { return "<code>" + esc(x) + "</code> (" + u[l[0]][x] + ")"; }).join(" ") + "</p>"; }).join("");
-    G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps to an account.</p>';
-    var fsp = d.fundSplit || [];
-    G3.$("dUnmapped").innerHTML += "<p><strong>Pay groups found:</strong> " + G3.PAYGROUPS.map(function (p) { return "<code>" + p + "</code>"; }).join(" ") + ". " + (fsp.length ? "Funding can\u2019t be split by pay group for " + fsp.map(esc).join(", ") + " (their Functional Areas span several pay groups)." : "Every account\u2019s funding maps to one pay group.") + "</p>";
+    G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps.</p>';
+    var cfl = d.pgConflicts || [];
+    G3.$("dUnmapped").innerHTML += "<p><strong>Account pay groups</strong> (first 5 digits of each account\u2019s Functional Areas): " + (d.accounts || []).filter(function (a) { return a.id !== "Unmapped"; }).map(function (a) { return esc(a.name) + " <code>" + (d.acctPg[a.id] || "none") + "</code>"; }).join(" &middot; ") + "</p>" +
+      (cfl.length ? '<p class="warn"><strong>Key conflicts:</strong> ' + cfl.map(function (x) { return esc(x.name) + " has Functional Areas in " + x.pgs.map(function (p) { return p || "no pay group (131\u2026)"; }).join(" and ") + "; counted under " + (x.used || "no pay group"); }).join("; ") + ".</p>" : "");
     G3.$("dPrograms").innerHTML = "<p>Accounts feeding each program tab (edit <code>G3.PROGRAM_ACCOUNTS</code> at the top of loaders.js):</p>" + ["idt", "at", "sch", "mob"].map(function (p) { var acc = (d.accounts || []).filter(function (a) { return a.program === p; }).map(function (a) { return a.name; }); return "<p><strong>" + G3.PROGRAMS[p].title + ":</strong> " + (acc.length ? acc.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") : '<span class="warn">no account matched</span>') + ' <span class="muted">(matches ' + G3.PROGRAM_ACCOUNTS[p].join(", ") + ")</span></p>"; }).join("");
-    G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC and Spend Plan tabs, or separate files.</p>';
+    G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC, Spend Plan and Commitment Item tabs, or separate files.</p>';
   }
   G3.renderDrawer = renderDrawer;
   var tt;

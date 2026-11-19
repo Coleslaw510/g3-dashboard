@@ -11,12 +11,15 @@ One **Upload data** button takes any mix of files; each is recognised by its hea
 | File | Recognised by headers | Used columns |
 |---|---|---|
 | Status of Funds export | Aviation export columns (Contract Doc No, Commitment Item FIPEX, Functional Area FAREA, Fiscal Year/Month, Commitment Amt Cum, Disbursement Amt Cum) | same math as Aviation |
-| Master Key – Funding | Account + TDP/AFP | Account, TDP, AFP, SAG, MDEP (optional Allotment, Fiscal Year) |
+| Master Key – Funding | Account + TDP/AFP | Account, TDP, AFP, Allotment (column right of AFP), SAG, MDEP (optional Fiscal Year) |
 | Master Key – Accounts | Functional Area + Account | |
 | Master Key – DPC | DPC/Internal Order + Description (+ TDC) | DPC, Description, Account, TDC |
 | Master Key – Spend Plan | Prioritization + Account (no months) | |
+| Master Key – Commitment Item | Commitment Item + Description (no DPC/Account) | descriptions shown wherever commitment items appear |
 | Commitments (checkbook drill down) | Entry Type + Amount + Internal Order | Pay Group, Internal Order, Entry Type, Amount (sign flipped). Commitment rows count in TDP execution; Obligation rows feed spending-by-DPC only |
 | FMZ3 | Earmarked Funds + Amount Open (TC) | open/total, Posting Date, Earmarked Funds (FMZ #), Functional Area, Commitment item, Document Header Text (traveler cleanup); zero-open rows dropped |
 | Spend plan | Prioritization + month columns | Prioritization, October–September |
 
 `samples/` holds sample files of every type (fictional); `node tools/make-samples.js` regenerates them; `node verify.js` checks the math and the upload round trip.
+
+Pay group = first 5 characters of a Functional Area when all digits (100101B3PRAT → 10010); each account takes its Functional Areas' pay group, so TDP/AFP/Allotment add up per pay group. `node perf.js` times common interactions (SCALE=20 THROTTLE=4 for a heavy-data / slow-laptop run).
