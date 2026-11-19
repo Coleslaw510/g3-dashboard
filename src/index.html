@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G3 Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e3a8a'/%3E%3Cpath d='M8 23V14M14 23V9M20 23v-6M26 23V12' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+/*@@CSS@@*/
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5.5h4V20"/></symbol>
+    <symbol id="i-sof" viewBox="0 0 24 24"><path d="M3 20h18"/><rect x="4.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="8" width="3" height="12" rx=".6"/><rect x="16.5" y="4" width="3" height="16" rx=".6"/><path d="M4 8.5 9 5l3 2 5-4"/><path d="M14.5 3H17v2.5"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/><path d="m7.5 15 2.5 2.5 6.5-5.5"/></symbol>
+    <symbol id="i-ulo" viewBox="0 0 24 24"><path d="M6.5 3h11M6.5 21h11"/><path d="M7.5 3v3.2a4.5 4.5 0 0 0 1.8 3.6L12 12l-2.7 2.2a4.5 4.5 0 0 0-1.8 3.6V21"/><path d="M16.5 3v3.2a4.5 4.5 0 0 1-1.8 3.6L12 12l2.7 2.2a4.5 4.5 0 0 1 1.8 3.6V21"/><path d="M9.5 18.5h5"/></symbol>
+    <symbol id="i-idt" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18"/><path d="M8 2.5v4M16 2.5v4"/><rect x="13.5" y="13" width="4" height="4" rx=".8"/><path d="M6.5 13.5h3M6.5 16.5h3"/></symbol>
+    <symbol id="i-at" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19L12 4z"/><path d="M12 4v16"/><path d="m12 11-3.5 9M12 11l3.5 9"/><path d="M10.5 1.8 12 4l1.5-2.2"/></symbol>
+    <symbol id="i-sch" viewBox="0 0 24 24"><path d="M2 9.5 12 5l10 4.5-10 4.5L2 9.5z"/><path d="M6 11.3v4.4c0 1.4 2.7 3.3 6 3.3s6-1.9 6-3.3v-4.4"/><path d="M21 10v5.5"/></symbol>
+    <symbol id="i-mob" viewBox="0 0 24 24"><path d="M2.5 19.5h19"/><path d="M3.6 13.2 5.3 12l3 1.6 3.3-1.8-5-4.8 1.8-.9 7 3.4 3.7-2a2 2 0 0 1 2 3.4L7.4 17a2 2 0 0 1-2-.1l-1.8-1.6a1.3 1.3 0 0 1 0-2.1z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4 15v3.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V15"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="wrap bar">
+    <button class="brand" type="button" data-go="home" aria-label="Home">
+      <span class="mark"><svg class="ic"><use href="#i-sof"/></svg></span><span class="bname">G3 Dashboard</span>
+    </button>
+    <nav class="tabs" id="tabs" aria-label="Pages">
+      <button type="button" data-go="home"><svg class="ic"><use href="#i-home"/></svg><span>Home</span></button>
+      <button type="button" data-go="sof"><svg class="ic"><use href="#i-sof"/></svg><span>Status of Funds</span></button>
+      <button type="button" data-go="spend"><svg class="ic"><use href="#i-plan"/></svg><span>Spend Plans</span></button>
+      <button type="button" data-go="ulo"><svg class="ic"><use href="#i-ulo"/></svg><span>Unliquidated</span></button>
+      <button type="button" data-go="idt"><svg class="ic"><use href="#i-idt"/></svg><span>IDT</span></button>
+      <button type="button" data-go="at"><svg class="ic"><use href="#i-at"/></svg><span>AT</span></button>
+      <button type="button" data-go="sch"><svg class="ic"><use href="#i-sch"/></svg><span>Schools</span></button>
+      <button type="button" data-go="mob"><svg class="ic"><use href="#i-mob"/></svg><span>Mob</span></button>
+    </nav>
+    <div class="tools">
+      <span class="asof" id="asOf"></span>
+      <button class="btn primary" id="btnUpload" type="button" title="Choose one or more Excel or CSV files; each goes to its page automatically"><svg class="ic"><use href="#i-upload"/></svg><span>Upload data</span></button>
+      <input type="file" id="fileInput" accept=".xlsx,.xlsm,.xls,.csv" multiple hidden>
+      <button class="iconbtn" id="btnInfo" type="button" title="Data details" aria-label="Data details" aria-controls="drawer" aria-expanded="false"><svg class="ic"><use href="#i-info"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <section class="page" id="page-home" aria-label="Home"></section>
+  <section class="page" id="page-sof" hidden aria-label="Status of Funds"></section>
+  <section class="page" id="page-spend" hidden aria-label="Spend Plans"></section>
+  <section class="page" id="page-ulo" hidden aria-label="Unliquidated"></section>
+  <section class="page" id="page-idt" hidden aria-label="IDT"></section>
+  <section class="page" id="page-at" hidden aria-label="Annual Training"></section>
+  <section class="page" id="page-sch" hidden aria-label="Schools"></section>
+  <section class="page" id="page-mob" hidden aria-label="Mobilization"></section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Data details">
+  <div class="dhead"><h2>Data details</h2><button class="iconbtn" id="btnClose" type="button" aria-label="Close">&times;</button></div>
+  <p class="dstate" id="dState"></p>
+  <div class="dactions">
+    <button class="btn primary sm" type="button" data-upload="1"><svg class="ic"><use href="#i-upload"/></svg>Upload files</button>
+    <button class="btn sm" id="btnSave" type="button" title="Download one HTML file with the current data built in">Save with data</button>
+    <button class="btn ghost sm" id="btnReset" type="button">Reset to test data</button>
+  </div>
+  <h3>Datasets</h3>
+  <div class="tablewrap"><table class="grid files" id="tFiles"><thead><tr><th>Dataset</th><th>Source</th><th class="num">Rows</th><th>Feeds</th></tr></thead><tbody></tbody></table></div>
+  <details class="dsec" open><summary>Expected columns (draft)</summary><div class="loadreport" id="dSchema"></div></details>
+  <details class="dsec"><summary>How the numbers work</summary>
+    <div class="loadreport">
+      <ul>
+        <li><strong>TDP view</strong> (full-year funding): Total execution = Commitments + Obligations + Disbursements. Balance = TDP &minus; Total execution.</li>
+        <li><strong>AFP view</strong> (funding through a date): Total execution = Obligations + Disbursements. Balance = AFP &minus; Total execution. Commitments are shown but not counted.</li>
+        <li><strong>Allotment view</strong> (funding now): Total execution = Obligations + Disbursements. Balance = Allotment &minus; Total execution.</li>
+        <li>Pace compares % executed with % of the fiscal year elapsed (TDP) or % of the AFP period elapsed (AFP). Within &plusmn;5 points is on pace.</li>
+        <li>Spend Plans, IDT, AT, Schools and Mob count actual spend as Obligations + Disbursements by fiscal month (Oct = 1 &hellip; Sep = 12). The current month&rsquo;s plan is prorated to the as-of date.</li>
+        <li>Unliquidated: days open = as-of date &minus; document date. Over 90 days is flagged amber, over 180 days red.</li>
+        <li>The pay group filter (10010, 10070, 10080, 10090) applies on every page.</li>
+      </ul>
+    </div>
+  </details>
+</aside>
+<div class="dropover" id="dropOver" hidden><div><svg class="ic big"><use href="#i-upload"/></svg><p>Drop files to load</p></div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>window.__dashSrc = document.documentElement.outerHTML; /* page markup before any script runs; used by "Save with data" */</script>
+<!--@@SCRIPTS@@-->
+</body>
+</html>
