@@ -439,6 +439,11 @@ td.cic{white-space:nowrap}
 
 .tufa{width:100%;border-collapse:collapse;margin:4px 0 10px}.tufa th,.tufa td{padding:4px 6px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}.tufa th{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.03em}.tufa .num{text-align:right;white-space:nowrap}
 
+/* Status of Funds: the page widens (up to 1760px) so the all-accounts table fits without a horizontal scroll bar; small screens keep the scroll */
+.wrap.wide{max-width:1760px}
+#page-sof table.acct th,#page-sof table.acct td{padding-left:8px;padding-right:8px}
+#page-sof table.acct td:first-child{white-space:normal;min-width:150px}
+
 </style>
 </head>
 <body>
@@ -1470,7 +1475,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   G3.go = function (p) { if ("#/" + p === location.hash) show(); else location.hash = "#/" + p; };
   function show() {
     var p = page();
-    G3.PAGES.forEach(function (x) { $("page-" + x).hidden = x !== p; });
+    G3.PAGES.forEach(function (x) { $("page-" + x).hidden = x !== p; }); document.querySelectorAll(".wrap").forEach(function (w) { w.classList.toggle("wide", p === "sof"); });   // Status of Funds: wider page so the accounts table fits without a scroll bar
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-go") === p); });
     render(p); w.scrollTo(0, 0);
   }

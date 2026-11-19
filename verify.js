@@ -229,6 +229,12 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   console.log(JSON.stringify(kj));
   ok(kj.same && kj.unm === 0 && kj.idtPlan > 0 && kj.idtSpent > 0 && kj.idtTdp > 0, 'Spend Plan tab accounts in different case / spacing / hidden characters still join: prioritization -> account <- Functional Area / funding (IDT plan ' + kj.idtPlan + ', spent ' + kj.idtSpent + ')');
   ok(kj.cross && kj.miss.join(',') === 'ORPHAN ACCT:Funding/Accounts/Spend Plan', 'account cross-check lists accounts missing from other key tabs (' + kj.miss.join(',') + ')');
+  // ---- Status of Funds accounts table fits without a horizontal scroll bar at 1920 and 1600 ----
+  const fit = [];
+  for (const w of [1920, 1600]) { const pw = await ctx.newPage(); await pw.setViewportSize({ width: w, height: 1000 }); await pw.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await pw.waitForTimeout(600);
+    for (const v of ['tdp', 'afp', 'allot']) fit.push(await pw.evaluate(([v, w]) => { G3.state.view = v; G3.refresh(); const t = document.querySelector('#page-sof table.acct').closest('.tablewrap'); return w + v + ':' + (t.scrollWidth <= t.clientWidth ? 'fits' : t.scrollWidth + '>' + t.clientWidth); }, [v, w]));
+    await pw.close(); }
+  ok(fit.every(x => /fits$/.test(x)), 'Status of Funds accounts table has no horizontal scroll at 1920 / 1600 (' + fit.join(' ') + ')');
   ok(errs.length === 0, 'no console errors ' + JSON.stringify(errs));
   await b.close();
 })();

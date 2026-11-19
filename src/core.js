@@ -184,7 +184,7 @@
   G3.go = function (p) { if ("#/" + p === location.hash) show(); else location.hash = "#/" + p; };
   function show() {
     var p = page();
-    G3.PAGES.forEach(function (x) { $("page-" + x).hidden = x !== p; });
+    G3.PAGES.forEach(function (x) { $("page-" + x).hidden = x !== p; }); document.querySelectorAll(".wrap").forEach(function (w) { w.classList.toggle("wide", p === "sof"); });   // Status of Funds: wider page so the accounts table fits without a scroll bar
     document.querySelectorAll("#tabs button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-go") === p); });
     render(p); w.scrollTo(0, 0);
   }
