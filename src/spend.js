@@ -26,7 +26,7 @@
     var vk = G3.varClass(tot.v), stc = { g: "#16a34a", y: "#eab308", r: "#dc2626", na: "#94a3b8" };
     var h = G3.head("plan", "i-plan", "Spend Plans", G3.scope((ui.acct ? G3.esc(G3.acct(ui.acct).name) : "All accounts") + " &middot; actuals through " + (cur ? G3.MONTHS[cur - 1] + " (month " + cur + ")" : "\u2014")));
     h += '<div class="filters">' + G3.fySel() + '<label class="grow">Account<select data-ui="acct"><option value="">All accounts</option>' + G3.data.accounts.map(function (a) { return '<option value="' + a.id + '"' + (a.id === ui.acct ? " selected" : "") + ">" + G3.esc(a.name) + "</option>"; }).join("") + "</select></label>" + G3.pgSeg() +
-      '<div class="segwrap"><span class="seglbl">View</span>' + G3.seg("mode", [["monthly", "Monthly"], ["cumulative", "Cumulative"]], ui.mode) + '</div><button class="btn" type="button" id="spReset">Reset</button></div>';
+      '<div class="segwrap"><span class="seglbl">View</span>' + G3.seg("mode", [["monthly", "Monthly"], ["cumulative", "Cumulative"]], ui.mode) + '</div><button class="btn" type="button" id="spReset">Reset</button></div>' + G3.pgNote();
     h += '<div class="kpis k4">' +
       G3.kpi("", "Planned to date", G3.money(tot.pTD), (cur ? "Oct\u2013" + G3.MONTHS[cur - 1] + (R.frac < 1 ? " (" + G3.MONTHS[cur - 1] + " prorated)" : "") : "No actuals") + " &middot; year plan " + G3.money(tot.fyPlan), ' style="--st:#94a3b8"') +
       G3.kpi("", "Actual to date", G3.money(tot.aTD), "Obligations + disbursements", ' style="--st:#2563eb"') +

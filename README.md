@@ -4,3 +4,19 @@
 - `src/`: the source. `base.css` is the Aviation Dashboard's command.css unchanged, and `g3.css` holds the G3 additions. `data.js` is the test-data generator and documents the data shape. `core.js` has state, the TDP/AFP/Allotment math, the loaders, and Save with data. Each page has its own file.
 - Build: `python3 build.py`. Screenshots: `node shoot.js` (1440px, into shots/). Math check: `node verify.js`.
 - Real report schemas go in `G3.loaders` in core.js. Each loader only has to output the shapes listed at the top of data.js.
+
+## Real report files (Nov 2026)
+One **Upload data** button takes any mix of files; each is recognised by its header row (not its name) and replaces only the dataset(s) it feeds:
+
+| File | Recognised by headers | Used columns |
+|---|---|---|
+| Status of Funds export | Aviation export columns (Contract Doc No, Commitment Item FIPEX, Functional Area FAREA, Fiscal Year/Month, Commitment Amt Cum, Disbursement Amt Cum) | same math as Aviation |
+| Master Key – Funding | Account + TDP/AFP | Account, TDP, AFP, SAG, MDEP (optional Allotment, Fiscal Year) |
+| Master Key – Accounts | Functional Area + Account | |
+| Master Key – DPC | DPC/Internal Order + Description (+ TDC) | DPC, Description, Account, TDC |
+| Master Key – Spend Plan | Prioritization + Account (no months) | |
+| Commitments (checkbook drill down) | Entry Type + Amount + Internal Order | Pay Group, Internal Order, Entry Type, Amount (sign flipped). Commitment rows count in TDP execution; Obligation rows feed spending-by-DPC only |
+| FMZ3 | Earmarked Funds + Amount Open (TC) | open/total, Posting Date, Earmarked Funds (FMZ #), Functional Area, Commitment item, Document Header Text (traveler cleanup); zero-open rows dropped |
+| Spend plan | Prioritization + month columns | Prioritization, October–September |
+
+`samples/` holds sample files of every type (fictional); `node tools/make-samples.js` regenerates them; `node verify.js` checks the math and the upload round trip.

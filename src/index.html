@@ -70,18 +70,20 @@
     <button class="btn ghost sm" id="btnReset" type="button">Reset to test data</button>
   </div>
   <h3>Datasets</h3>
-  <div class="tablewrap"><table class="grid files" id="tFiles"><thead><tr><th>Dataset</th><th>Source</th><th class="num">Rows</th><th>Feeds</th></tr></thead><tbody></tbody></table></div>
-  <details class="dsec" open><summary>Expected columns (draft)</summary><div class="loadreport" id="dSchema"></div></details>
+  <div class="tablewrap"><table class="grid files" id="tFiles"><thead><tr><th>Dataset</th><th>File</th><th class="num">Rows</th><th>Notes</th></tr></thead><tbody></tbody></table></div>
+  <details class="dsec" open><summary>Not mapped</summary><div class="loadreport" id="dUnmapped"></div></details>
+  <details class="dsec" open><summary>Program tabs</summary><div class="loadreport" id="dPrograms"></div></details>
+  <details class="dsec"><summary>Columns each file needs</summary><div class="loadreport" id="dSchema"></div></details>
   <details class="dsec"><summary>How the numbers work</summary>
     <div class="loadreport">
       <ul>
-        <li><strong>TDP view</strong> (full-year funding): Total execution = Commitments + Obligations + Disbursements. Balance = TDP &minus; Total execution.</li>
-        <li><strong>AFP view</strong> (funding through a date): Total execution = Obligations + Disbursements. Balance = AFP &minus; Total execution. Commitments are shown but not counted.</li>
-        <li><strong>Allotment view</strong> (funding now): Total execution = Obligations + Disbursements. Balance = Allotment &minus; Total execution.</li>
-        <li>Pace compares % executed with % of the fiscal year elapsed (TDP) or % of the AFP period elapsed (AFP). Within &plusmn;5 points is on pace.</li>
-        <li>Spend Plans, IDT, AT, Schools and Mob count actual spend as Obligations + Disbursements by fiscal month (Oct = 1 &hellip; Sep = 12). The current month&rsquo;s plan is prorated to the as-of date.</li>
-        <li>Unliquidated: days open = as-of date &minus; document date. Over 90 days is flagged amber, over 180 days red.</li>
-        <li>The pay group filter (10010, 10070, 10080, 10090) applies on every page.</li>
+        <li><strong>TDP</strong>: execution = commitments + obligations + disbursements. <strong>AFP</strong> and <strong>Allotment</strong>: execution = obligations + disbursements. Balance = funding level &minus; execution.</li>
+        <li>Obligations and disbursements come from the Status of Funds export (same rules as the Aviation dashboard: signs flipped, obligation = total expenditure &minus; disbursement, ALLOBJ rows dropped). Commitments come from the commitments report (Entry Type &ldquo;commitment&rdquo;, sign flipped).</li>
+        <li>Commitments report rows with Entry Type &ldquo;obligation&rdquo; are used <strong>only</strong> for spending by DPC (Status of Funds DPC table and the TDC/DPC breakouts). They never add to execution or balance, since the export already counts obligations.</li>
+        <li>Pace (TDP only) compares % executed with % of the fiscal year elapsed; within &plusmn;5 points is on pace.</li>
+        <li>Spend Plans and program tabs count actual spend as obligations + disbursements by fiscal month. The current month&rsquo;s plan is prorated to the as-of date. Multiple prioritizations on one account are added together.</li>
+        <li>Unliquidated (FMZ3): open = Amount Open, days open = as-of date &minus; Posting Date; zero-open lines are left out. Over 90 days is amber, over 180 red.</li>
+        <li>Pay group is only on the commitments report, so the pay group filter narrows commitments and DPC spending. Funding, the export, the spend plan and FMZ3 have no pay group and always show all of them.</li>
       </ul>
     </div>
   </details>

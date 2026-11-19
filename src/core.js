@@ -40,13 +40,14 @@
     return { day: day, total: tot, frac: day / tot };
   };
   // through which fiscal month data runs (1..12)
-  G3.curFm = function (fy) { var m = 0; G3.data.lines.forEach(function (l) { if (l.fy === fy && (l.oblig || l.disb) && l.fm > m) m = l.fm; }); return m; };
+  G3.curFm = function (fy) { var m = 0; G3.data.lines.forEach(function (l) { if (l.fy === fy && l.src === "export" && l.fm > m) m = l.fm; }); return m; };
   G3.priorFy = function (fy) { return String(+fy - 1); };
 
   // ---------- filtering & aggregation ----------
-  G3.pgOk = function (pg) { return G3.state.pg === "All" || pg === G3.state.pg; };
+  G3.pgOk = function (pg) { return G3.state.pg === "All" || !pg || pg === G3.state.pg; };   // rows with no pay group (funding, export, plan, FMZ3) are not filterable
   G3.acct = function (id) { for (var i = 0; i < G3.data.accounts.length; i++) if (G3.data.accounts[i].id === id) return G3.data.accounts[i]; return { id: id, name: id }; };
-  G3.dpcName = function (code, account) { for (var i = 0; i < G3.data.dpcs.length; i++) { var d = G3.data.dpcs[i]; if (d.code === code && (!account || d.account === account)) return d.name; } return ""; };
+  G3.dpcInfo = function (code) { var k = G3.util.kn(code); for (var i = 0; i < G3.data.dpcs.length; i++) if (G3.util.kn(G3.data.dpcs[i].code) === k) return G3.data.dpcs[i]; return null; };
+  G3.dpcName = function (code) { var d = G3.dpcInfo(code); return d ? d.name : ""; };
   G3.sum = function (rows, f) { var s = 0; for (var i = 0; i < rows.length; i++) s += (typeof f === "function" ? f(rows[i]) : rows[i][f]) || 0; return s; };
   G3.group = function (rows, key) { var o = {}; rows.forEach(function (r) { var k = typeof key === "function" ? key(r) : r[key]; (o[k] = o[k] || []).push(r); }); return o; };
   G3.lines = function (fy, extra) { return G3.data.lines.filter(function (l) { return l.fy === fy && G3.pgOk(l.pg) && (!extra || extra(l)); }); };
@@ -87,6 +88,28 @@
     return '<div class="seg" data-seg="' + name + '">' + opts.map(function (o) { return '<button type="button" data-v="' + G3.esc(o[0]) + '"' + (String(o[0]) === String(cur) ? ' class="on"' : "") + ">" + o[1] + "</button>"; }).join("") + "</div>";
   };
   G3.pgSeg = function () { return '<div class="segwrap"><span class="seglbl">Pay group</span>' + G3.seg("pg", [["All", "All"]].concat(G3.PAYGROUPS.map(function (p) { return [p, p]; })), G3.state.pg) + "</div>"; };
+  G3.viewSeg = function () {
+    var h = G3.seg("view", [["tdp", "TDP"], ["afp", "AFP"], ["allot", "Allotment"]], G3.state.view);
+    return G3.data.hasAllot ? h : h.replace('data-v="allot"', 'data-v="allot" disabled title="Add an Allotment column to the Funding tab of the master key to use this view"');
+  };
+  // Pay group exists only on the commitments report (and the funds export if it carries one): say so when the filter is on
+  G3.pgNote = function () {
+    if (G3.state.pg === "All") return "";
+    var none = ["funding"].concat(G3.data.hasPg.export ? [] : ["obligations & disbursements (funds export)"]).concat(["spend plan", "FMZ3"]);
+    return '<div class="pgnote">Pay group ' + G3.esc(G3.state.pg) + " is applied to commitments" + (G3.data.hasPg.export ? ", obligations and disbursements" : " and DPC obligations") + ". " + none.join(", ") + " have no pay group, so they show all pay groups.</div>";
+  };
+  // spending by DPC: commitments + obligations from the commitments report (current fiscal year only)
+  G3.dpcRollup = function (fy, filter) {
+    if (fy !== G3.fyOf(G3.asOf())) return [];
+    var by = {};
+    (G3.data.dpcLines || []).forEach(function (x) {
+      if (!G3.pgOk(x.pg) || (filter && !filter(x))) return;
+      var k = G3.util.kn(x.dpc) || "(none)", inf = G3.dpcInfo(x.dpc);
+      var o = by[k] || (by[k] = { code: x.dpc || "(none)", name: inf ? inf.name : (x.dpc ? x.dpc + " (not in DPC key)" : "No Internal Order"), tdc: inf ? inf.tdc : "Not in DPC key", account: x.account, commit: 0, oblig: 0, total: 0, n: 0 });
+      o[x.type] += x.amt; o.total += x.amt; o.n++;
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.total - a.total; });
+  };
   G3.fySel = function () { return '<label>Fiscal year<select data-st="fy">' + G3.data.fys.slice().reverse().map(function (f) { return '<option value="' + f + '"' + (f === G3.state.fy ? " selected" : "") + ">FY" + f + (f === G3.fyOf(G3.asOf()) ? " (current)" : "") + "</option>"; }).join("") + "</select></label>"; };
   G3.scope = function (extra) { return "<strong>FY" + G3.state.fy + "</strong> &middot; " + (G3.state.pg === "All" ? "All pay groups" : "Pay group " + G3.state.pg) + (extra ? " &middot; " + extra : ""); };
   G3.testTag = function () { return G3.data.source === "test" ? '<span class="demotag">Test data</span>' : ""; };
@@ -147,75 +170,57 @@
     $("btnSave").disabled = false;
   }
 
-  // ---------- loaders (swap in real report schemas here) ----------
-  /* Each loader recognises a sheet by its header row and returns rows in the G3.data shape.
-     These are DRAFT schemas; replace detect()/parse() once the real report layouts are known. */
-  function H(o, names) { var ks = Object.keys(o); for (var i = 0; i < names.length; i++) { var n = names[i].toLowerCase().replace(/[^a-z0-9]/g, ""); for (var j = 0; j < ks.length; j++) if (ks[j].toLowerCase().replace(/[^a-z0-9]/g, "") === n) return o[ks[j]]; } return undefined; }
-  function N(v) { if (typeof v === "number") return v; var x = parseFloat(String(v == null ? "" : v).replace(/[$,\s]/g, "").replace(/^\((.*)\)$/, "-$1")); return isFinite(x) ? x : 0; }
-  function S(v) { return v == null ? "" : String(v).trim(); }
-  function D(v) { if (v instanceof Date) return v.getFullYear() + "-" + ("0" + (v.getMonth() + 1)).slice(-2) + "-" + ("0" + v.getDate()).slice(-2); if (typeof v === "number" && w.XLSX) { var p = XLSX.SSF.parse_date_code(v); return p.y + "-" + ("0" + p.m).slice(-2) + "-" + ("0" + p.d).slice(-2); } var d = new Date(v); return isNaN(d) ? S(v) : D(d); }
-  function hasCols(row, cols) { return cols.every(function (c) { return H(row, [c]) !== undefined; }); }
-  G3.loaders = [
-    { id: "funding", label: "Funding (TDP / AFP / Allotment)", cols: ["FY", "Account", "Pay Group", "TDP", "AFP", "Allotment"],
-      parse: function (rows) { return rows.map(function (o) { return { fy: S(H(o, ["FY"])), account: S(H(o, ["Account"])), pg: S(H(o, ["Pay Group"])), tdp: N(H(o, ["TDP"])), afp: N(H(o, ["AFP"])), allot: N(H(o, ["Allotment"])) }; }); } },
-    { id: "lines", label: "Execution lines (Status of Funds, IDT, AT, Schools, Mob)", cols: ["FY", "Fiscal Month", "Account", "Pay Group", "DPC", "Commitment", "Obligation", "Disbursement"],
-      parse: function (rows) { return rows.map(function (o) { return { fy: S(H(o, ["FY"])), fm: N(H(o, ["Fiscal Month"])), account: S(H(o, ["Account"])), pg: S(H(o, ["Pay Group"])), dpc: S(H(o, ["DPC"])), doc: S(H(o, ["Document Number", "Document"])), ci: S(H(o, ["Commitment Item"])), unit: S(H(o, ["Unit"])), school: S(H(o, ["School"])) || null, commit: N(H(o, ["Commitment"])), oblig: N(H(o, ["Obligation"])), disb: N(H(o, ["Disbursement"])), qty: N(H(o, ["Man-days", "Qty", "Soldiers"])) }; }); } },
-    { id: "plan", label: "Spend plan", cols: ["FY", "Account", "Pay Group", "Oct", "Sep"],
-      parse: function (rows) { return rows.map(function (o) { return { fy: S(H(o, ["FY"])), account: S(H(o, ["Account"])), pg: S(H(o, ["Pay Group"])), m: G3.MONTHS.map(function (m) { return N(H(o, [m])); }) }; }); } },
-    { id: "ulo", label: "Unliquidated transactions", cols: ["Document Number", "Commitment Item", "Total Amount", "Open Amount", "Document Date"],
-      parse: function (rows) { return rows.map(function (o) { return { doc: S(H(o, ["Document Number"])), ci: S(H(o, ["Commitment Item"])), account: S(H(o, ["Account"])), pg: S(H(o, ["Pay Group"])), dpc: S(H(o, ["DPC"])), desc: S(H(o, ["Description"])), date: D(H(o, ["Document Date"])), total: N(H(o, ["Total Amount"])), open: N(H(o, ["Open Amount"])) }; }); } }
-  ];
-  G3.loaded = {};   // dataset id -> file name it came from
+  // ---------- uploads: every sheet is routed by its header row (loaders.js) ----------
+  function ingest(fileName, sheets) {
+    var got = G3.parseWorkbook(fileName, sheets);
+    got.forEach(function (e) { G3.data.sets[e.kind] = { name: fileName, sheet: e.report.sheet, rows: e.rows, report: e.report, at: new Date().toISOString() }; });
+    return got;
+  }
+  G3.ingest = ingest;
   function loadFiles(list) {
     if (!w.XLSX) { G3.toast("Excel reader not available.", true); return; }
-    var files = Array.prototype.slice.call(list || []), got = [], miss = [];
+    var files = Array.prototype.slice.call(list || []), done = [], miss = [], fatal = [];
     (function next() {
       var f = files.shift(); if (!f) return finish();
       var rd = new FileReader();
       rd.onload = function (e) {
         try {
           var wb = /\.csv$/i.test(f.name) ? XLSX.read(e.target.result, { type: "string", cellDates: true }) : XLSX.read(new Uint8Array(e.target.result), { type: "array", cellDates: true });
-          var hit = false;
-          wb.SheetNames.forEach(function (sn) {
-            var rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: "" }); if (!rows.length) return;
-            G3.loaders.forEach(function (L) { if (!hit && hasCols(rows[0], L.cols)) { hit = true; got.push({ L: L, rows: L.parse(rows), name: f.name }); } });
-          });
-          if (!hit) miss.push(f.name);
+          var sheets = wb.SheetNames.map(function (sn) { return { name: sn, aoa: XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null, blankrows: false }) }; });
+          if (G3.data.source === "test") { G3.data = { v: 2, source: "file", asOf: null, sets: {} }; G3.toast("Test data cleared; loading your files."); }
+          var got = ingest(f.name, sheets);
+          if (!got.length) miss.push(f.name);
+          got.forEach(function (g) { if (g.report.fatal) fatal.push(f.name + ": " + g.report.fatal); else done.push(f.name + " \u2192 " + G3.KIND_LABEL[g.kind]); });
         } catch (err) { miss.push(f.name + " (" + err.message + ")"); }
         next();
       };
       if (/\.csv$/i.test(f.name)) rd.readAsText(f); else rd.readAsArrayBuffer(f);
     })();
     function finish() {
-      if (got.length) {
-        if (G3.data.source === "test") { G3.data = { v: 1, source: "file", asOf: D(new Date()), fys: [], accounts: G3.data.accounts, dpcs: G3.data.dpcs, schools: G3.data.schools, fyMeta: G3.data.fyMeta, funding: [], lines: [], plan: [], ulo: [] }; G3.loaded = {}; }
-        got.forEach(function (g) { G3.data[g.L.id] = g.rows; G3.loaded[g.L.id] = g.name; });
-        G3.data.source = "file"; G3.data.asOf = D(new Date()); normalize();
-      }
-      G3.toast(got.length ? "Loaded " + got.map(function (g) { return g.name + " \u2192 " + g.L.label; }).join(", ") + (miss.length ? ". Not recognised: " + miss.join(", ") : "") : "No file matched a known layout: " + miss.join(", "), !!miss.length);
+      if (done.length) { G3.data.source = "file"; G3.data.asOf = isoToday(); }
+      G3.derive();
+      G3.toast((done.length ? "Loaded " + done.join(", ") + ". " : "") + (fatal.length ? "Problems: " + fatal.join("; ") + ". " : "") + (miss.length ? "Not recognised: " + miss.join(", ") : ""), !!(miss.length || fatal.length));
       renderDrawer(); G3.refresh();
     }
   }
-  function normalize() {
-    var d = G3.data, fys = {};
-    [d.funding, d.lines, d.plan].forEach(function (a) { a.forEach(function (r) { if (r.fy) fys[r.fy] = 1; }); });
-    d.fys = Object.keys(fys).sort(); if (!d.fys.length) d.fys = [G3.fyOf(new Date())];
-    var ids = {}; d.accounts.forEach(function (a) { ids[a.id] = 1; });
-    [d.funding, d.lines, d.plan, d.ulo].forEach(function (a) { a.forEach(function (r) { if (r.account && !ids[r.account]) { ids[r.account] = 1; d.accounts.push({ id: r.account, name: r.account, program: null }); } }); });
-    if (d.fys.indexOf(G3.state.fy) < 0) G3.state.fy = d.fys.indexOf(G3.fyOf(G3.asOf())) >= 0 ? G3.fyOf(G3.asOf()) : d.fys[d.fys.length - 1];
+  G3.loadFiles = loadFiles;
+  function isoToday() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function loadTest() {
+    G3.data = { v: 2, source: "test", asOf: G3.TEST_ASOF, sets: {} };
+    G3.makeTestFiles().forEach(function (f) { ingest(f.name + " (test)", f.sheets); });
+    G3.derive();
   }
-  G3.normalize = normalize;
 
   // ---------- save with data ----------
   var SAVED_ID = "g3Saved";
-  function readSaved() { var el = $(SAVED_ID); if (!el) return null; try { var o = JSON.parse(el.textContent); return o && o.v === 1 && o.data ? o : null; } catch (e) { return null; } }
+  function readSaved() { var el = $(SAVED_ID); if (!el) return null; try { var o = JSON.parse(el.textContent); return o && o.v === 2 && o.data && o.data.sets ? o : null; } catch (e) { return null; } }
   function safeJson(o) { return JSON.stringify(o).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029"); }
   function saveWithData() {
     var cap = w.__dashSrc, scripts = [], seen = false;
     document.querySelectorAll("script").forEach(function (sc) { if (sc.id === SAVED_ID) return; if (seen) scripts.push(sc.outerHTML); else if (sc.textContent.indexOf("__dashSrc") >= 0) seen = true; });
     if (!cap) { alert("Could not build the saved file."); return; }
     var html = "<!doctype html>\n" + cap.replace(/<\/body>\s*<\/html>\s*$/i, "") + "\n" + scripts.join("\n") + "\n";
-    html += '<script id="' + SAVED_ID + '" type="application/json">' + safeJson({ v: 1, savedAt: new Date().toISOString(), data: G3.data }) + "</scr" + "ipt>\n</body>\n</html>\n";
+    html += '<script id="' + SAVED_ID + '" type="application/json">' + safeJson({ v: 2, savedAt: new Date().toISOString(), data: { v: 2, source: G3.data.source, asOf: G3.data.asOf, sets: G3.data.sets } }) + "</scr" + "ipt>\n</body>\n</html>\n";
     var d = new Date(), name = "G3-Dashboard-" + ("0" + d.getDate()).slice(-2) + MONS[d.getMonth()] + String(d.getFullYear()).slice(2) + ".html";
     var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" })); a.download = name;
     document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
@@ -224,14 +229,22 @@
   // ---------- drawer ----------
   function openDrawer(on) { $("drawer").hidden = !on; $("scrim").hidden = !on; $("btnInfo").setAttribute("aria-expanded", on ? "true" : "false"); if (on) renderDrawer(); }
   function renderDrawer() {
-    var d = G3.data;
-    $("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong> so the layout can be reviewed. Upload report files to replace it." : "Showing data loaded from your files" + (d.asOf ? " on " + G3.dateText(d.asOf) : "") + ".";
-    var feeds = { funding: "Status of Funds, Home", lines: "Status of Funds, Spend Plans, IDT, AT, Schools, Mob", plan: "Spend Plans, program pages", ulo: "Unliquidated" };
-    $("tFiles").querySelector("tbody").innerHTML = G3.loaders.map(function (L) {
-      var src = d.source === "test" ? '<span class="flag">Test data</span>' : G3.loaded[L.id] ? G3.esc(G3.loaded[L.id]) : '<span class="muted">Not loaded</span>';
-      return "<tr><td><strong>" + L.label + "</strong></td><td>" + src + '</td><td class="num">' + G3.num((d[L.id] || []).length) + "</td><td>" + feeds[L.id] + "</td></tr>";
+    var d = G3.data, S = d.sets, esc = G3.esc;
+    G3.$("dState").innerHTML = d.source === "test" ? "Showing <strong>fictional test data</strong>, read through the same loaders as real files. Your first upload clears it; after that each upload replaces only the datasets it brings." : "Showing data loaded from your files. Each upload replaces only the datasets it brings" + (d.asOf ? "; days open are counted to " + G3.dateText(d.asOf) : "") + ".";
+    G3.$("tFiles").querySelector("tbody").innerHTML = G3.KIND_ORDER.map(function (k) {
+      var s = S[k];
+      if (!s) return "<tr><td><strong>" + G3.KIND_LABEL[k] + '</strong></td><td class="muted" colspan="3">Not loaded</td></tr>';
+      var rp = s.report, notes = [];
+      if (rp.fatal) notes.push('<span class="err">' + esc(rp.fatal) + "</span>");
+      Object.keys(rp.skipped || {}).forEach(function (why) { notes.push('<span class="warn">' + G3.num(rp.skipped[why]) + " " + esc(why) + "</span>"); });
+      (rp.notes || []).forEach(function (n) { notes.push(esc(n)); });
+      return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";
     }).join("");
-    $("dSchema").innerHTML = G3.loaders.map(function (L) { return "<p><strong>" + L.label + ":</strong> " + L.cols.map(function (c) { return "<code>" + c + "</code>"; }).join(" ") + "</p>"; }).join("") + '<p class="muted">Draft columns only. These get replaced with the real report layouts once the schemas are final.</p>';
+    var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"]];
+    var um = lists.filter(function (l) { return u[l[0]] && Object.keys(u[l[0]]).length; }).map(function (l) { return "<p><strong>" + l[1] + ":</strong> " + Object.keys(u[l[0]]).map(function (x) { return "<code>" + esc(x) + "</code> (" + u[l[0]][x] + ")"; }).join(" ") + "</p>"; }).join("");
+    G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps to an account.</p>';
+    G3.$("dPrograms").innerHTML = "<p>Accounts feeding each program tab (edit <code>G3.PROGRAM_ACCOUNTS</code> at the top of loaders.js):</p>" + ["idt", "at", "sch", "mob"].map(function (p) { var acc = (d.accounts || []).filter(function (a) { return a.program === p; }).map(function (a) { return a.name; }); return "<p><strong>" + G3.PROGRAMS[p].title + ":</strong> " + (acc.length ? acc.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") : '<span class="warn">no account matched</span>') + ' <span class="muted">(matches ' + G3.PROGRAM_ACCOUNTS[p].join(", ") + ")</span></p>"; }).join("");
+    G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC and Spend Plan tabs, or separate files.</p>';
   }
   G3.renderDrawer = renderDrawer;
   var tt;
@@ -241,8 +254,7 @@
   function init() {
     chartsInit();
     var saved = readSaved();
-    G3.data = saved ? saved.data : G3.makeTestData();
-    normalize();
+    if (saved) { G3.data = saved.data; G3.derive(); } else loadTest();
     if (!G3.state.fy) G3.state.fy = G3.fyOf(G3.asOf());
     document.addEventListener("click", function (e) {
       var t = e.target.closest("[data-go]"); if (t && !e.target.closest("[data-stop]")) { G3.go(t.getAttribute("data-go")); return; }
@@ -255,7 +267,7 @@
     $("btnClose").addEventListener("click", function () { openDrawer(false); });
     $("scrim").addEventListener("click", function () { openDrawer(false); });
     $("btnSave").addEventListener("click", saveWithData);
-    $("btnReset").addEventListener("click", function () { G3.data = G3.makeTestData(); G3.loaded = {}; normalize(); renderDrawer(); G3.refresh(); G3.toast("Test data restored."); });
+    $("btnReset").addEventListener("click", function () { loadTest(); renderDrawer(); G3.refresh(); G3.toast("Test data restored."); });
     var dz = 0;
     document.addEventListener("dragenter", function (e) { if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") >= 0) { dz++; $("dropOver").hidden = false; } });
     document.addEventListener("dragleave", function () { if (--dz <= 0) { dz = 0; $("dropOver").hidden = true; } });

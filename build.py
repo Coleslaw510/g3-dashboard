@@ -3,7 +3,7 @@
 import pathlib
 root = pathlib.Path(__file__).parent; src = root / "src"
 css = (src / "base.css").read_text() + "\n" + (src / "g3.css").read_text()
-order = ["vendor/chart.umd.min.js", "vendor/xlsx.full.min.js", "data.js", "core.js", "sof.js", "spend.js", "ulo.js", "program.js", "home.js"]
+order = ["vendor/chart.umd.min.js", "vendor/xlsx.full.min.js", "data.js","loaders.js","core.js", "sof.js", "spend.js", "ulo.js", "program.js", "home.js"]
 def js(p):
     t = (src / p).read_text()
     return "<script>\n" + t.replace("</script", "<\\/script") + "\n</script>"

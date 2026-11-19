@@ -70,3 +70,20 @@ tr.futr td{color:var(--soft)}
 table.ulo{font-size:.82rem}
 table.ulo td.wrapc{min-width:170px;max-width:240px}
 table.grid td.dsc{white-space:normal;min-width:150px}
+/* real-schema round */
+.pgnote{margin:-4px 0 14px;padding:7px 12px;border-radius:9px;background:#f1f5f9;border:1px dashed #cbd5e1;color:#475569;font-size:.8rem}
+.kpi .kt{font-size:1.05rem;line-height:1.2;display:inline-block}
+.stat .kt{font-size:.95rem}
+.tdcdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+tr.tdcr{cursor:pointer}tr.tdcr:hover td{background:#f8fafc}tr.tdcr.sel td{background:#eef2ff}
+table.tdct td,table.tdct th{white-space:nowrap}
+tr.ulr{cursor:pointer}tr.ulr td.caret{color:#94a3b8;width:14px}
+tr.uldet td{background:#f8fafc}
+.detgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 18px;padding:6px 2px}
+.detgrid div{display:flex;flex-direction:column}.detgrid span{font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.03em}.detgrid b{font-weight:600;font-size:.84rem;word-break:break-word}
+.nodata{padding:22px;text-align:center;color:#64748b;background:#f8fafc;border-radius:10px}
+.chartbox.tall{height:340px}
+.seg button[disabled]{opacity:.4;cursor:not-allowed}
+.loadreport code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.78rem}
+.loadreport .ok{color:#15803d}.loadreport .err{color:#b91c1c}
+td .warn,.loadreport .warn{color:#b45309}
