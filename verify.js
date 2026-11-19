@@ -190,6 +190,22 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(pr.months === 12 && F2.fyPlan === F0.fyPlan && F2.pTD === F0.pTD, 'spend plan with Account + date month headers (Aviation/G1 layout) loads: 12 months, year plan ' + F2.fyPlan);
   const fmv = await p4.evaluate(() => ['2027002', 2027002, '002.2027', 'P02', '02 - Nov', 'Nov', 2, '002'].map(v => G3.util.fmNum(v)));
   ok(fmv.every(x => x === 2), 'fiscal month formats (2027002, 002.2027, P02, 02 - Nov, Nov, 2, 002) all read as month 2');
+  // ---- military pay (2060): 100101B1PRID-style Functional Areas map; commitments-report obligations with no Internal Order map by FA ----
+  const p5 = await ctx.newPage(); p5.on('pageerror', e => errs.push(e.message));
+  await p5.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await p5.waitForTimeout(500);
+  const mdir = path.join(__dirname, 'samples', 'milpay');
+  const mFiles = fs.readdirSync(mdir).map(f => path.join(mdir, f)).concat(['FMZ3 Unliquidated.xlsx', 'G3 Spend Plan FY27.xlsx'].map(f => path.join(__dirname, 'samples', f)));
+  await p5.setInputFiles('#fileInput', mFiles); await p5.waitForFunction(() => G3.data.source === 'file', null, { timeout: 15000 }); await p5.waitForTimeout(800);
+  const mp = await p5.evaluate(() => {
+    const L = G3.data.lines.filter(l => l.src === 'export' && /^MILPAY/.test(l.doc)), D = G3.data.dpcLines.filter(x => /^MPAY/.test(x.sdn));
+    G3.renderDrawer(); const um = document.getElementById('dUnmapped').innerHTML;
+    return { exp: L.map(l => l.fa + '>' + l.account).join(' '), com: D.map(x => x.fa + '>' + x.account + ':' + x.amt).join(' '), how: G3.data.faHow, top: (G3.data.topUnmappedFa || []).map(o => o.fa + ' $' + Math.round(o.amt) + ' ~' + (o.closest && o.closest.fa)),
+      expUnm: G3.data.diag.export.unmapped, comUnm: G3.data.diag.commit.unmapped, hasTable: /Top unmapped Functional Areas/.test(um) && /100991B1PRZZ/.test(um), hasHow: /How rows mapped/.test(um) };
+  });
+  console.log(JSON.stringify(mp, null, 1));
+  ok(mp.exp === '100101B1PRID>IDT 100101B1PRID>IDT 100101B1PRDR>IDT 100701B1PRAT>AT 100991B1PRZZ>Unmapped', '2060 export lines map: 100101B1PRID / 100101B1PRDR via key FA 100101B1PR (prefix), 100701B1PRAT despite hidden characters on the key (' + mp.exp + ')');
+  ok(mp.com === '100101B1PRID>IDT:264000 100101B1PRID>IDT:118250 100701B1PRAT>AT:51000 100991B1PRZZ>Unmapped:9000', 'commitments-report 2060 obligation rows with no Internal Order map by Functional Area, shown positive (' + mp.com + ')');
+  ok(mp.top[0] && /^100991B1PRZZ \$34000 ~/.test(mp.top[0]) && mp.hasTable && mp.hasHow && mp.how.export.prefix >= 3 && mp.how.commit.exact + mp.how.commit.prefix >= 3, 'data panel: top unmapped Functional Areas with $ and closest key FA (' + mp.top[0] + '), and how rows mapped');
   ok(errs.length === 0, 'no console errors ' + JSON.stringify(errs));
   await b.close();
 })();

@@ -189,4 +189,20 @@
     var acc = {}; sp.slice(1).forEach(function (r) { var a = map[String(r[0]).toUpperCase()]; if (!a) return; var o = acc[a] || (acc[a] = mi.map(function () { return 0; })); mi.forEach(function (c, k) { o[k] += +r[c] || 0; }); });
     return { name: "Spend plan (Account layout).xlsx", sheets: [{ name: "Plan", aoa: [head].concat(Object.keys(acc).map(function (a) { return [a].concat(acc[a]); })) }] };
   };
+
+  // Military pay (appropriation 2060) case: Accounts tab lists short/odd Functional Areas (100101B1PR, "100701B1PRAT" + hidden characters),
+  // the export carries 2060 lines on 100101B1PRID / 100101B1PRDR / 100701B1PRAT, and the commitments report has 2060 obligation rows
+  // with NO Internal Order (they can only map by Functional Area). One FA (100991B1PRZZ) is on no key, to show up in the unmapped list.
+  G3.makeMilpayFiles = function () {
+    var F = G3.makeTestFiles(), key = F[0], ex = F[1].sheets[0].aoa.map(function (r) { return r.slice(); }), cm = F[2].sheets[0].aoa.map(function (r) { return r.slice(); });
+    key = { name: "G3 Master Key (2060).xlsx", sheets: key.sheets.map(function (sh) { var a = sh.aoa.map(function (r) { return r.slice(); }); if (sh.name === "Accounts") a.push(["100101B1PR", "IDT"], [" 100701B1PRAT\u00a0\u200b", "AT"]); return { name: sh.name, aoa: a }; }) };
+    var add = [["100101B1PRID", 1, -412000.5, -390000.25], ["100101B1PRID", 2, -380500, -301000], ["100101B1PRDR", 1, -150000, -150000], ["100701B1PRAT", 2, -98000, -45000], ["100991B1PRZZ", 2, -25000, -20000]];
+    add.forEach(function (x, i) { ex.push(["MILPAY" + (100 + i), "11B1", x[0], "2060", 2027, x[1], x[2], x[3]]); });
+    var h = cm[0], col = function (n) { return h.indexOf(n); };
+    [["100101B1PRID", -264000], ["100101B1PRID", -118250], ["100701B1PRAT", -51000], ["100991B1PRZZ", -9000]].forEach(function (x, i) {
+      var r = h.map(function () { return null; }); r[col("Business")] = "NGB"; r[col("Fund")] = "2060"; r[col("Functional Area")] = x[0]; r[col("Internal Order")] = "";
+      r[col("SDN")] = "MPAY" + (500 + i); r[col("Entry Type")] = "Obligation"; r[col("Amount")] = x[1]; cm.push(r);
+    });
+    return [key, { name: "Status of Funds export (2060).xlsx", sheets: [{ name: "Export", aoa: ex }] }, { name: "Checkbook Drill Down - Commitments (2060).xlsx", sheets: [{ name: "Sheet1", aoa: cm }] }];
+  };
 })(window);

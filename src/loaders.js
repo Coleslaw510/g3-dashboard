@@ -65,6 +65,8 @@
   function fmOfDate(v) { var d = dateIso(v); return d ? (+d.slice(5, 7) + 2) % 12 + 1 : null; }
   function isAllobj(v) { return typeof v === "string" && txt(v).toUpperCase() === "ALLOBJ"; }
   function kn(v) { var s = idText(v).toUpperCase().replace(/\s+/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
+  // Functional Area join key: letters and digits only, upper case (drops spaces, non-breaking/zero-width characters, dashes, a trailing *); leading zeros ignored when all digits
+  function fk(v) { var s = idText(v).toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, "") : s; }
   function an(v) { return txt(v).replace(/\s+/g, " ").toUpperCase(); }
   function dateIso(v) {
     if (blankish(v)) return "";
@@ -338,13 +340,13 @@
     G3.dataVer = (G3.dataVer || 0) + 1;
     var d = G3.data, S = d.sets, cur = G3.fyOf(G3.asOf()), curFm = (G3.asOf().getMonth() + 3) % 12 + 1;
     var rows = function (k) { return S[k] ? S[k].rows : []; };
-    var names = {}, accounts = [], unm = { fa: {}, dpc: {}, prio: {}, fmzFa: {}, ci: {} };
+    var names = {}, accounts = [], unm = { fa: {}, dpc: {}, prio: {}, fmzFa: {}, commitFa: {}, ci: {} };
     function addAcct(ac) { var k = an(ac); if (!k) return ""; if (!names[k]) { names[k] = ac; accounts.push({ id: ac, name: ac, program: G3.programOf(ac) }); } return names[k]; }
     var faMap = {}, info = {};
     rows("fundkey").forEach(function (r) { addAcct(r.acct); });
-    rows("acctkey").forEach(function (r) { var ac = addAcct(r.acct); if (!faMap[kn(r.fa)]) faMap[kn(r.fa)] = ac; });
+    rows("acctkey").forEach(function (r) { var ac = addAcct(r.acct); var f = fk(r.fa); if (f && !faMap[f]) faMap[f] = ac; });
     // Aviation rule: Functional Area + Account pairs on the funding file fill gaps in the Accounts tab
-    rows("fundkey").forEach(function (r) { if (r.fa && !faMap[kn(r.fa)]) faMap[kn(r.fa)] = names[an(r.acct)]; });
+    rows("fundkey").forEach(function (r) { var f = fk(r.fa); if (f && !faMap[f]) faMap[f] = names[an(r.acct)]; });
     // working fiscal year: the latest one in the funds export (what the dashboard opens on); no export -> the current fiscal year
     var expFys = {}; rows("export").forEach(function (r) { if (r.fy) expFys[r.fy] = 1; });
     // Aviation/G1 rule: the current fiscal year when the export has it, else the latest earlier year, else the latest year
@@ -367,15 +369,29 @@
     var hasCi = !!S.cikey;
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
     var UN = "Unmapped";
-    // Functional Area -> Account. Exact match first (case, spaces and leading zeros ignored); if none, a key FA of 8+ characters that is the
-    // start of the report's FA (or the other way round) is accepted and counted in the data panel.
-    var faKeys = Object.keys(faMap).filter(function (k) { return k.length >= 8; }).sort(function (a, b) { return b.length - a.length; }), faMemo = {}; d.faPrefix = 0;
-    function faLookup(fa) {
-      var k = kn(fa); if (!k) return ""; if (faMap[k]) return faMap[k]; if (k in faMemo) return faMemo[k];
-      var hit = ""; for (var i = 0; i < faKeys.length; i++) if (k.indexOf(faKeys[i]) === 0 || (k.length >= 8 && faKeys[i].indexOf(k) === 0)) { hit = faMap[faKeys[i]]; break; }
+    // Functional Area -> Account (Accounts tab, plus FA/Account pairs on the funding key).
+    //   1. exact: same letters/digits, ignoring case, spaces, dashes and hidden characters
+    //   2. prefix: the LONGEST key FA (5+ characters) that the report's FA starts with (key lists 100101B1PR or 10010 -> covers 100101B1PRID)
+    //   3. reverse: the report's FA (8+ characters) is the start of exactly one account's key FAs
+    // How each row mapped is counted per dataset in Data details.
+    var faKeys = Object.keys(faMap).filter(function (k) { return k.length >= 5; }).sort(function (a, b) { return b.length - a.length; }), faMemo = {}; d.faPrefix = 0;
+    d.faHow = {};
+    function faFind(fa) {
+      var k = fk(fa); if (!k) return { ac: "", how: "" }; if (faMap[k]) return { ac: faMap[k], how: "exact" }; if (k in faMemo) return faMemo[k];
+      var hit = { ac: "", how: "" }, i;
+      for (i = 0; i < faKeys.length; i++) if (k.indexOf(faKeys[i]) === 0) { hit = { ac: faMap[faKeys[i]], how: "prefix", key: faKeys[i] }; break; }
+      if (!hit.ac && k.length >= 8) { var acs = {}, first = ""; faKeys.forEach(function (f) { if (f.indexOf(k) === 0) { acs[faMap[f]] = 1; first = first || f; } }); var l = Object.keys(acs); if (l.length === 1) hit = { ac: l[0], how: "reverse", key: first }; }
       return (faMemo[k] = hit);
     }
-    function acctFa(fa, bucket) { var a = faLookup(fa); if (a) { if (!faMap[kn(fa)]) d.faPrefix++; return a; } if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
+    function faLookup(fa, ds) { var h = faFind(fa); if (ds && h.how) { var o = d.faHow[ds] || (d.faHow[ds] = { exact: 0, prefix: 0, reverse: 0, dpc: 0, acct: 0 }); o[h.how]++; } return h.ac; }
+    function acctFa(fa, bucket, ds) { var h = faFind(fa); if (h.ac) { faLookup(fa, ds); if (h.how !== "exact") d.faPrefix++; return h.ac; } if (fa) bucket[fa] = (bucket[fa] || 0) + 1; return UN; }
+    function howCount(ds, how) { var o = d.faHow[ds] || (d.faHow[ds] = { exact: 0, prefix: 0, reverse: 0, dpc: 0, acct: 0 }); o[how]++; }
+    // closest key Functional Area for an unmapped one (longest shared start), for the data panel
+    var allKeys = Object.keys(faMap);
+    d.closestFa = function (fa) {
+      var k = fk(fa), best = "", bl = 0; allKeys.forEach(function (f) { var n = 0; while (n < f.length && n < k.length && f[n] === k[n]) n++; if (n > bl) { bl = n; best = f; } });
+      return best ? { fa: best, account: faMap[best], shared: bl } : null;
+    };
     // pay group on a spending row: its ACCOUNT's pay group (Accounts tab) when the account is known; otherwise the row's own (Pay Group column / FA).
     // Pay group never decides whether a row counts: under All every row counts.
     var pgMemo = {};
@@ -387,15 +403,19 @@
     d.hasAllot = hasAllot; d.acctInfo = info;
     // execution lines: export (obligations / disbursements) + commitments (commitments report, current FY)
     d.lines = [];
-    rows("export").forEach(function (r) { ciSeen(r.ci); var ac = acctFa(r.fa, unm.fa); d.lines.push({ fy: r.fy || wfy, fm: r.fm || null, account: ac, pg: rowPg(ac, r.pg), fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
+    rows("export").forEach(function (r) { ciSeen(r.ci); var ac = acctFa(r.fa, unm.fa, "export"); d.lines.push({ fy: r.fy || wfy, fm: r.fm || null, account: ac, pg: rowPg(ac, r.pg), fa: r.fa, dpc: r.dpc, doc: r.doc, ci: r.ci, commit: 0, oblig: r.oblig, disb: r.disb, src: "export" }); });
     // commitments report rows: commitments feed execution; obligations feed spending-by-DPC only
     d.dpcLines = [];
     rows("commit").forEach(function (r) {
-      var k = kn(r.dpc), m = dpcMap[k], ac = m && m.account ? m.account : (names[an(r.rptAcct)] || "");
+      // Internal Order -> DPC tab account; else Functional Area -> Accounts tab (military pay 2060 rows often carry no Internal Order); else the report's Account column
+      var k = kn(r.dpc), m = dpcMap[k], ac = "";
+      if (m && m.account) { ac = m.account; howCount("commit", "dpc"); }
+      if (!ac && r.fa) ac = faLookup(r.fa, "commit");
+      if (!ac && names[an(r.rptAcct)]) { ac = names[an(r.rptAcct)]; howCount("commit", "acct"); }
       if (!m && r.dpc) unm.dpc[r.dpc] = (unm.dpc[r.dpc] || 0) + 1;
-      ac = ac || UN;
+      if (!ac) { if (r.fa) unm.commitFa[r.fa] = (unm.commitFa[r.fa] || 0) + 1; ac = UN; }
       var pg = rowPg(ac, r.pg);
-      d.dpcLines.push({ type: r.type, account: ac, pg: pg, dpc: r.dpc, amt: r.amt, sdn: r.sdn });
+      d.dpcLines.push({ type: r.type, account: ac, pg: pg, dpc: r.dpc, fa: r.fa, amt: r.amt, sdn: r.sdn });
       if (r.type === "commit") d.lines.push({ fy: wfy, fm: null, upcoming: true, account: ac, pg: pg, dpc: r.dpc, doc: r.sdn, ci: "", commit: r.amt, oblig: 0, disb: 0, src: "commit" });
     });
     // spend plan: Prioritization -> Account (Spend Plan tab, or an exact account name); several prioritizations add up
@@ -410,7 +430,7 @@
     d.planFy = Object.keys(d.plan.reduce(function (o, p) { o[p.fy] = 1; return o; }, {})).sort();
     // unliquidated (FMZ3): Functional Area -> Account (Accounts tab); Order = DPC
     d.ulo = rows("fmz3").map(function (r) {
-      var ac = faLookup(r.fa) || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
+      var ac = faLookup(r.fa, "fmz3") || (dpcMap[kn(r.order)] && dpcMap[kn(r.order)].account) || "";
       if (!ac) { if (r.fa) unm.fmzFa[r.fa] = (unm.fmzFa[r.fa] || 0) + 1; ac = UN; }
       ciSeen(r.ci);
       return Object.assign({}, r, { account: ac, pg: rowPg(ac, G3.pgFromFa(r.fa)), dpc: r.order, date: r.post || r.docdate, ci: r.ci, type: r.ci || r.dt || "Other", desc: r.traveler ? "DTS \u2013 " + r.traveler : (r.hdr || r.text || "") });
@@ -420,6 +440,13 @@
     var fys = {}; fys[wfy] = 1; d.lines.forEach(function (l) { if (l.fy) fys[l.fy] = 1; }); d.funding.forEach(function (f) { fys[f.fy] = 1; });
     d.fys = Object.keys(fys).sort();
     d.unmapped = unm;
+    // top unmapped Functional Areas by dollars (export obligations + disbursements, commitments report, FMZ3 open), with the closest key FA
+    var tu = {};
+    function addU(fa, ds, v) { if (!fa) return; var k = fk(fa), o = tu[k] || (tu[k] = { fa: fa, amt: 0, n: 0, ds: {} }); o.amt += Math.abs(v || 0); o.n++; o.ds[ds] = 1; }
+    d.lines.forEach(function (l) { if (l.src === "export" && l.account === UN) addU(l.fa, "SOF export", l.oblig + l.disb); });
+    d.dpcLines.forEach(function (x) { if (x.account === UN) addU(x.fa, "commitments report", x.amt); });
+    d.ulo.forEach(function (u) { if (u.account === UN) addU(u.fa, "FMZ3", u.open); });
+    d.topUnmappedFa = Object.keys(tu).map(function (k) { var o = tu[k]; o.closest = d.closestFa(o.fa); o.ds = Object.keys(o.ds); return o; }).sort(function (a, b) { return b.amt - a.amt; }).slice(0, 15);
     d.hasPg = { export: d.lines.some(function (l) { return l.src === "export" && l.pg; }), commit: !!S.commit, fmz3: d.ulo.some(function (u) { return u.pg; }) };
     // pay group list: the four standard ones plus any other 5-digit pay group found
     var pgs = {}; G3.BASE_PAYGROUPS.forEach(function (p) { pgs[p] = 1; });
@@ -438,8 +465,8 @@
     d.diag = {
       fundkey: { total: sum(d.funding, function (f) { return f.tdp; }), label: "TDP", unmapped: 0, byFy: byFy(d.funding, function (f) { return f.tdp; }) },
       export: { total: sum(ex, od), label: "obligations + disbursements", unmapped: sum(ex.filter(function (l) { return l.account === UN; }), od), byFy: byFy(ex, od), why: "Functional Area not on the Accounts tab", noMonth: sum(ex.filter(function (l) { return !l.fm; }), od), lastFm: G3.curFm ? ex.reduce(function (m, l) { return l.fy === wfy && l.fm > m ? l.fm : m; }, 0) : 0 },
-      commit: { total: sum(d.dpcLines, function (x) { return x.amt; }), label: "commitments + obligations", unmapped: sum(d.dpcLines.filter(function (x) { return x.account === UN; }), function (x) { return x.amt; }), why: "Internal Order not on the DPC tab", commit: sum(cm, function (l) { return l.commit; }) },
-      fmz3: { total: sum(d.ulo, function (u) { return u.open; }), label: "open", unmapped: 0 },
+      commit: { total: sum(d.dpcLines, function (x) { return x.amt; }), label: "commitments + obligations", unmapped: sum(d.dpcLines.filter(function (x) { return x.account === UN; }), function (x) { return x.amt; }), why: "Internal Order not on the DPC tab and Functional Area not on the Accounts tab", commit: sum(cm, function (l) { return l.commit; }) },
+      fmz3: { total: sum(d.ulo, function (u) { return u.open; }), label: "open", unmapped: sum(d.ulo.filter(function (u) { return u.account === UN; }), function (u) { return u.open; }), why: "Functional Area not on the Accounts tab (and Order not on the DPC tab)" },
       plan: { total: sum(d.plan, function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), label: "planned", unmapped: sum(d.plan.filter(function (p) { return p.account === UN; }), function (p) { return p.m.reduce(function (a, b) { return a + b; }, 0); }), why: "Prioritization not on the Spend Plan tab (and no matching Account)" }
     };
     if (!d.hasAllot && G3.state.view === "allot") G3.state.view = "tdp";
