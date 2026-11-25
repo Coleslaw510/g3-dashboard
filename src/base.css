@@ -42,6 +42,8 @@ header.top{background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bot
 /* ---------- pages ---------- */
 main{padding:22px 22px 60px}
 .pagehead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:4px 0 16px}
+.headacts{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.hero-top{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .pagehead h1{display:flex;align-items:center;gap:12px;margin:0;font-size:1.65rem;letter-spacing:-.3px}
 .pic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#fff}
 .pic svg.ic{width:22px;height:22px}
@@ -219,12 +221,53 @@ table.grid td.wrapc{white-space:normal;min-width:220px;max-width:420px}
 @media(max-width:1250px){.tabs span{display:none}.tabs button{padding:8px 10px}.kpis.k6{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:1000px){.tiles{grid-template-columns:repeat(3,1fr)}.overview,.row.r2,.pacegrid,.fpace{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.big3{grid-template-columns:1fr 1fr 1fr}}
 @media(max-width:640px){.tiles{grid-template-columns:1fr 1fr}.bname,.asof,#btnUpload span{display:none}.kpis,.kpis.k6{grid-template-columns:1fr 1fr}.pipeline{flex-direction:column}.stage,.stage:first-child{clip-path:none;padding-left:16px}.hero{flex-direction:column;align-items:flex-start}}
+#printBanner,#printFoot{display:none}
 @media print{
-  @page{size:landscape;margin:10mm}
-  header.top,.filters,.tabletools,.drawer,.scrim,.toast,.pagehead .btn{display:none!important}
-  body{background:#fff}.panel,.kpi,.ocard,.tile,.acard{box-shadow:none;break-inside:avoid}
-  .tablewrap.scrolly{max-height:none;overflow:visible}
+  @page{size:letter landscape;margin:12mm 10mm 14mm 10mm}
+  @page{@bottom-right{content:"Page " counter(page);font-size:8pt;color:#64748b}}
+  html,body{background:#fff!important;color:#0f172a;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  header.top,.filters,.tabletools,.drawer,.scrim,.toast,.dropover,.pagehead,.hctl,.pager,.unitacts,.pgnote,.hint,.tablehead .btn,
+  .hero-top,.hero .eyebrow,.hero h1,.hero .lead,.more,.demotag,[data-print]{display:none!important}
+  main{padding:0!important}
+  .wrap,.wrap.wide{max-width:none!important;width:auto!important;padding:0!important;margin:0!important}
+  section.page[hidden]{display:none!important}
+  #printBanner{display:block!important;border-bottom:2.5px solid #1e3a5f;padding:0 0 8px;margin:0 0 12px;background:#fff;break-after:avoid}
+  #printBanner .pb-top{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+  #printBanner .pb-brand{font-size:9.5pt;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1e3a5f}
+  #printBanner .pb-tab{font-size:16pt;font-weight:750;letter-spacing:-.3px;color:#0f172a}
+  #printBanner .pb-meta{font-size:8.5pt;color:#475569;margin-top:3px}
+  #printBanner .pb-filters{font-size:8.5pt;color:#1e3a5f;font-weight:650;margin-top:5px;background:#f1f5f9;padding:4px 9px;border-radius:4px}
+  #printFoot{display:flex!important;justify-content:space-between;align-items:center;position:fixed;left:0;right:0;bottom:0;font-size:8pt;color:#64748b;border-top:1px solid #cbd5e1;padding:4px 0 0;background:#fff}
+  body.printing,body{padding-bottom:10mm}
+  .panel,.kpi,.ocard,.tile,.acard,.tcard{box-shadow:none!important}
+  .kpi,.ocard,.tile,.acard,.row.r2,.kpis,.tiles,.overview,.big3,.agestrip{break-inside:avoid;page-break-inside:avoid}
+  .panel{break-inside:avoid;page-break-inside:avoid;margin-bottom:8px}
+  .panel:has(table){break-inside:auto;page-break-inside:auto}
+  .tablewrap,.tablewrap.scrolly{max-height:none!important;overflow:visible!important;height:auto!important}
+  table{width:100%!important;font-size:8pt;border-collapse:collapse}
+  thead{display:table-header-group}
+  tfoot{display:table-footer-group}
+  tr,th,td{break-inside:avoid;page-break-inside:avoid}
+  thead th{background:#f1f5f9!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .kpis,.kpis.k6{display:flex!important;flex-wrap:nowrap;gap:8px;grid-template-columns:none}
+  .kpi{flex:1;min-width:0;padding:8px 10px;border:1px solid #e2e8f0}
+  .kpi .val{font-size:1.05rem}
+  .kpi .sub{font-size:.7rem}
+  .chartbox{height:210px!important;width:100%!important}
+  .chartbox.spark{height:88px!important}
+  .hero{margin-bottom:10px;padding-bottom:0;border:0}
+  .fyring{break-inside:avoid}
+  a{color:inherit;text-decoration:none}
+  .xbar{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
+/* On-screen print-mode preview uses the same chrome (banner/footer); layout rules stay in @media print. */
+body.printing #printBanner{display:block}
+body.printing #printFoot{display:flex;justify-content:space-between;align-items:center}
+body.printing .chartbox{height:210px!important;width:100%!important}
+body.printing .chartbox.spark{height:88px!important}
+body.printing .chartbox.tall{height:260px!important}
+body.printing .tablewrap,body.printing .tablewrap.scrolly{max-height:none!important;overflow:visible!important}
+
 .asofp{color:var(--accent);font-size:.8rem;font-weight:650;margin-top:6px}
 .ocard .oasof{color:var(--soft);font-size:.78rem;font-weight:600;margin-left:8px}
 .acard .gauge{margin-top:20px}

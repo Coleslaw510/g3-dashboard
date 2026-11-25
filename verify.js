@@ -371,6 +371,15 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(jn.hasAM && jn.has133 && jn.hasCo && jn.levels >= 3, 'Spending by Unit tree is 3 levels: MSC expands to battalions/units, units expand to companies');
   ok(jn.hasState && Math.abs((jn.stateTotal || 0) - (jn.stAmt || 0)) < 0.05 && jn.stN > 0 && !jn.unmappedHasState && jn.umState, 'State-level root UIC W8AAAA spending is under State / JFHQ (root), not Unmapped UIC (' + jn.stN + ' SOF rows, $' + Math.round(jn.stAmt) + ')');
   ok(jn.panel && jn.expBtn && !jn.xd && !jn.dpcSel && !jn.hqText, 'SOF unit tree has Expand all, no Company x DPC table, no DPC/Order filter, and no HQ / direct rows');
+  const acctFirst = await pU.evaluate(() => {
+    const a = document.getElementById('acctPanel') || document.querySelector('#page-sof table.acct');
+    const u = document.getElementById('unitPanel');
+    if (!a || !u) return false;
+    const el = a.closest ? (a.id === 'acctPanel' ? a : a.closest('.panel')) : a;
+    return !!(el.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  ok(acctFirst, 'Status of Funds Accounts table is above Spending by Unit');
+
   ok(!jn.iaDivNode && jn.divRoot && jn.aq0bN === 1 && jn.placedParent === 'W8AQAA' && jn.placedMsc === 'W8AMAA' && /W8AQ0B/.test(jn.dupes), 'IA DIV is not a tree node; duplicate UIC W8AQ0B appears once under 1-133 Infantry (W8AQAA), not under IA DIV');
   ok(!jn.ngInUnmapped && !jn.commitHasExcl && jn.umExcl && (jn.excluded > 0 || jn.uloLabel >= 0), 'NGDFHDOU is excluded from commitments and unmapped DPC list; SOF dollars on that Order are kept as No order (excluded DPC)');
   ok(jn.fmzRows > jn.uloN, 'zero-open FMZ3 rows are kept for the Order lookup but left out of Unliquidated (' + jn.uloN + ' open / ' + jn.fmzRows + ' loaded)');
@@ -387,11 +396,28 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     const tdcN = co && co.tdcs ? co.tdcs.length : 0;
     const dpcN = co && co.tdcs ? co.tdcs.reduce((s, t) => s + (t.dpcs || []).length, 0) : 0;
     const tdcSum = (co && co.tdcs ? co.tdcs.reduce((s, t) => s + t.total, 0) : 0);
+    const mscTdcN = msc && msc.tdcs ? msc.tdcs.length : 0;
+    const bnTdcN = bn && bn.tdcs ? bn.tdcs.length : 0;
+    const mscAdds = msc && msc.tdcs ? Math.abs(msc.tdcs.reduce((s, t) => s + t.total, 0) - msc.total) < 0.05 : false;
+    const bnAdds = bn && bn.tdcs ? Math.abs(bn.tdcs.reduce((s, t) => s + t.total, 0) - bn.total) < 0.05 : false;
     const panel = !!document.getElementById('idtUnitDpc');
     const html = (document.getElementById('idtUnitDpc') || {}).innerText || '';
+    const hasView = !!document.querySelector('#idtUnitDpc [data-seg="unitView"]');
+    const hasCols = /<th[^>]*>TDC<\/th>/i.test((document.getElementById('idtUnitDpc') || {}).innerHTML || '') && /<th[^>]*>DPC<\/th>/i.test((document.getElementById('idtUnitDpc') || {}).innerHTML || '');
+    G3.mods.idt.ui.unitView = 'msc'; G3.mods.idt.ui.openUnit = null; G3.mods.idt.render();
+    if (msc && msc.tdcs && msc.tdcs[0]) {
+      G3.mods.idt.ui.openUnit = G3.mods.idt.ui.openUnit || {};
+      G3.mods.idt.ui.openUnit[msc.id] = true;
+      G3.mods.idt.ui.openUnit[msc.tdcs[0].id] = true;
+      G3.mods.idt.render();
+    }
+    const mscHtml = (document.getElementById('idtUnitDpc') || {}).innerHTML || '';
+    const mscShowsTdc = msc && msc.tdcs && msc.tdcs[0] && mscHtml.indexOf(msc.tdcs[0].tdc) >= 0;
+    const mscShowsDpc = !!(msc && msc.tdcs && msc.tdcs[0] && msc.tdcs[0].dpcs && msc.tdcs[0].dpcs[0] && mscHtml.indexOf(msc.tdcs[0].dpcs[0].name) >= 0 && (msc.tdcs[0].dpcs[0].code ? mscHtml.indexOf(msc.tdcs[0].dpcs[0].code) >= 0 : true));
     return {
       panel, hasMsc: !!msc, hasBn: !!bn, hasCo: !!co, tdcN, dpcN,
       tdcAdds: Math.abs(tdcSum - (co ? co.total : -1)) < 0.05,
+      mscTdcN, bnTdcN, mscAdds, bnAdds, hasView, hasCols, mscShowsTdc, mscShowsDpc,
       hasTdcLabel: /Unit spending by DPC/.test(html),
       iaDiv: /IA DIV/.test(html), hq: /HQ \/ direct/.test(html),
       atPanel: (location.hash = '#/at', G3.refresh(), !!document.getElementById('atUnitDpc')),
@@ -401,7 +427,33 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   });
   console.log(JSON.stringify(idtU));
   ok(idtU.panel && idtU.hasTdcLabel && idtU.hasMsc && idtU.hasBn && idtU.hasCo && idtU.tdcN > 0 && idtU.dpcN > 0 && idtU.tdcAdds, 'IDT Unit spending by DPC: MSC > battalion > company, company TDC + DPC add back to the company total (' + idtU.tdcN + ' TDCs, ' + idtU.dpcN + ' DPCs)');
+  ok(idtU.mscTdcN > 0 && idtU.bnTdcN > 0 && idtU.mscAdds && idtU.bnAdds && idtU.hasView && idtU.hasCols && idtU.mscShowsTdc && idtU.mscShowsDpc, 'IDT By MSC / Battalion views roll up TDC and DPC (MSC ' + idtU.mscTdcN + ' TDCs, battalion ' + idtU.bnTdcN + '); DPC description and code are shown under the TDC');
   ok(idtU.atPanel && idtU.schPanel && idtU.mobPanel && !idtU.iaDiv && !idtU.hq, 'AT, Schools, and Mob also have Unit spending by DPC; IA DIV and HQ / direct are not on the IDT section');
+
+  // ---- Print button on every tab and a prepared print header/footer ----
+  const pPr = await ctx.newPage();
+  await pPr.goto('file://' + __dirname + '/g3-dashboard.html#/sof');
+  await pPr.waitForTimeout(700);
+  const printChk = await pPr.evaluate(() => {
+    const tabs = G3.PAGES.map(id => {
+      location.hash = '#/' + id; G3.refresh();
+      const root = document.getElementById('page-' + id);
+      return { id, btn: !!(root && root.querySelector('[data-print]')) };
+    });
+    location.hash = '#/sof'; G3.refresh();
+    G3.preparePrint();
+    const banner = document.getElementById('printBanner');
+    const foot = document.getElementById('printFoot');
+    const txt = ((banner && banner.innerText) || '') + ' ' + ((foot && foot.innerText) || '');
+    const ready = document.body.classList.contains('printing') && /G3 Budget Dashboard/.test(txt) && /Status of Funds/.test(txt) && /Printed/.test(txt) && /GFEBS SOF/.test(txt) && /FY/.test(txt) && /TDP/.test(txt);
+    G3.restorePrint();
+    const restored = !document.body.classList.contains('printing') && (!banner || banner.hidden);
+    return { missing: tabs.filter(t => !t.btn).map(t => t.id).join(','), allBtn: tabs.every(t => t.btn), ready, restored, txt: txt.slice(0, 240) };
+  });
+  await pPr.close();
+  console.log(JSON.stringify(printChk));
+  ok(printChk.allBtn, 'Print button is on every tab' + (printChk.missing ? ' (missing: ' + printChk.missing + ')' : ''));
+  ok(printChk.ready && printChk.restored, 'Print prep adds G3 Budget Dashboard / tab / as-of / printed date / filters / source footer, then restore clears it');
 
   // ---- Status of Funds accounts table fits without a horizontal scroll bar at 1920 and 1600 ----
   const fit = [];

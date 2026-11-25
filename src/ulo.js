@@ -43,8 +43,9 @@
     h += '<div class="row r2"><div class="panel"><h2>Open amount by age and commitment item</h2><div class="chartbox"><canvas id="cUloAge"></canvas></div></div><div class="panel"><h2>Open amount by pay group</h2><div class="chartbox"><canvas id="cUloAcct"></canvas></div></div></div>';
     var k = ui.sort, dir = ui.asc ? 1 : -1;
     rows.sort(function (a, b) { var x = a[k], y = b[k]; return (x > y ? 1 : x < y ? -1 : 0) * dir; });
-    var pages = Math.max(1, Math.ceil(rows.length / PER)); ui.page = Math.min(ui.page, pages - 1);
-    var vis = rows.slice(ui.page * PER, ui.page * PER + PER);
+    var per = ui.printAll ? Math.max(rows.length, 1) : PER;
+    var pages = Math.max(1, Math.ceil(rows.length / per)); ui.page = Math.min(ui.page, pages - 1);
+    var vis = rows.slice(ui.page * per, ui.page * per + per);
     var cols = [["type", "Commitment item"], ["desc", "Description"], ["order", "DPC"], ["date", "Posted"], ["days", "Days open", "num"], ["total", "Total", "num"], ["open", "Open", "num"], ["liq", "Liquidated", "num"]];
     function det(l, v) { return v ? "<div><span>" + l + "</span><b>" + G3.esc(v) + "</b></div>" : ""; }
     h += '<div class="panel"><div class="tablehead"><h2>Open lines</h2><div class="tabletools"><span class="muted small">' + rows.length + " lines &middot; " + G3.whole(openT) + ' open</span><button class="btn sm" type="button" id="uloCsv">Export CSV</button></div></div><p class="muted small">Over 90 days is amber, over 180 days red. Click a row for the FMZ number and the rest of the line. Click a column header to sort.</p>' +

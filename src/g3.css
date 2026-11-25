@@ -163,3 +163,11 @@ table.unit tr.lst td.num .xbar i,table.unit tr.state td.num .xbar i{background:#
 .filters label.ufl.u-search{--ufl:#2563eb;background:#fff}
 .filters label.ufl select,.filters label.ufl input{background:#fff;padding:9px 11px;border-radius:8px;min-height:38px}
 .filters label.ufl select:focus,.filters label.ufl input:focus{outline:2px solid color-mix(in srgb, var(--ufl) 35%, #fff);border-color:var(--ufl)}
+
+table.unit.udpc td.tdcc{font-weight:650;color:#3730a3;white-space:nowrap;font-size:.88rem}
+table.unit.udpc td.dpcc{min-width:14em}
+table.unit .dpc-desc{font-weight:650;font-size:.92rem;color:#1e293b}
+table.unit .dpc-code{display:inline-block;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.85rem;font-weight:700;background:#eef2ff;color:#3730a3;border-radius:6px;padding:2px 8px;margin-left:6px;letter-spacing:.02em;vertical-align:middle}
+table.unit tr.lgrp td{background:#f8fafc;font-size:.72rem;font-weight:750;letter-spacing:.05em;text-transform:uppercase;color:#64748b;border-top:1px solid var(--line)}
+table.unit .usub{display:block;font-size:.75rem;font-weight:500;color:var(--muted);margin-top:1px}
+.unitdpc .filters{align-items:flex-end}

@@ -370,8 +370,100 @@
     return "<strong>FY" + st.fy + "</strong> &middot; " + (G3.USE_PAYGROUPS ? (st.pg === "All" ? "All pay groups" : "Pay group " + st.pg) : (st.fund === "All" ? "All funds" : "Fund " + st.fund)) + (u.length ? " &middot; " + G3.esc(u.join(" / ")) : "") + (extra ? " &middot; " + extra : "");
   };
   G3.testTag = function () { return G3.data.source === "test" ? '<span class="demotag">Test data</span>' : ""; };
+  G3.printBtn = function () {
+    return '<button class="btn ghost sm" type="button" data-print="1" title="Print this tab for a clean, one-tab briefing"><svg class="ic"><use href="#i-print"/></svg>Print</button>';
+  };
   G3.head = function (id, icon, title, scope) {
-    return '<div class="pagehead"><div><h1><span class="pic t-' + id + '"><svg class="ic"><use href="#' + icon + '"/></svg></span>' + title + G3.testTag() + '</h1><div class="asofp">' + (G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) : "") + '</div><div class="scope">' + scope + '</div></div><button class="btn ghost" type="button" data-go="home"><svg class="ic"><use href="#i-home"/></svg>Home</button></div>';
+    return '<div class="pagehead"><div><h1><span class="pic t-' + id + '"><svg class="ic"><use href="#' + icon + '"/></svg></span>' + title + G3.testTag() + '</h1><div class="asofp">' + (G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) : "") + '</div><div class="scope">' + scope + '</div></div><div class="headacts">' + G3.printBtn() + '<button class="btn ghost" type="button" data-go="home"><svg class="ic"><use href="#i-home"/></svg>Home</button></div></div>';
+  };
+  G3.printNowText = function () {
+    try {
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(new Date());
+      var get = function (t) { var x = parts.find(function (p) { return p.type === t; }); return x ? x.value : ""; };
+      return get("month") + " " + get("day") + ", " + get("year") + ", " + get("hour") + ":" + get("minute") + " " + get("dayPeriod") + " CT";
+    } catch (e) { return new Date().toLocaleString() + " CT"; }
+  };
+  G3.printFilters = function () {
+    var p = G3.page(), st = G3.state, parts = [], mod = G3.mods[p] && G3.mods[p].ui;
+    parts.push("FY" + st.fy);
+    if (p === "home" || p === "sof") parts.push((G3.VIEWS[st.view] || {}).label + " view");
+    parts.push(G3.USE_PAYGROUPS ? (st.pg === "All" ? "All pay groups" : "Pay group " + st.pg) : (st.fund === "All" ? "All funds" : "Fund " + st.fund));
+    if (st.msc) parts.push("MSC: " + (G3.unitName(st.msc) || st.msc));
+    if (st.bn) parts.push("Battalion / Unit: " + (G3.unitName(st.bn) || st.bn));
+    if (st.uic) parts.push("Company: " + (G3.unitName(st.uic) || st.uic));
+    if (mod && mod.acct) parts.push("Account: " + ((G3.acct(mod.acct) || {}).name || mod.acct));
+    if (mod && mod.mode && (p === "spend" || p === "idt" || p === "at" || p === "sch" || p === "mob")) parts.push((mod.mode === "cumulative" ? "Cumulative" : "Monthly") + " trend");
+    if (mod && mod.unitView && (p === "idt" || p === "at" || p === "sch" || p === "mob")) {
+      var uv = { msc: "Spending by MSC", bn: "Spending by Battalion / Unit", co: "Spending by Company", tree: "Unit tree" }[mod.unitView];
+      if (uv) parts.push(uv);
+    }
+    if (p === "ulo" && mod) {
+      if (mod.ci) parts.push("Commitment item: " + (G3.ciName(mod.ci) || mod.ci));
+      if (mod.age !== "" && G3.mods.ulo.BUCKETS && G3.mods.ulo.BUCKETS[+mod.age]) parts.push(G3.mods.ulo.BUCKETS[+mod.age][0] + " days open");
+      if (mod.q) parts.push("Search: “" + mod.q + "”");
+    }
+    return parts.join("  ·  ");
+  };
+  G3.printAsOf = function () {
+    var bits = [];
+    if (G3.data.asOf) bits.push("Data as of " + G3.dateText(G3.data.asOf));
+    var fm = G3.curFm(G3.state.fy);
+    if (fm) bits.push("Through " + G3.monthLabel(G3.state.fy, fm));
+    return bits.join("  ·  ") || "No as-of date in the loaded files";
+  };
+  function printResizeCharts(on) {
+    Object.keys(G3.charts).forEach(function (id) {
+      var c = G3.charts[id]; if (!c || !c.canvas) return;
+      var vis = c.canvas.offsetParent || (c.canvas.closest && c.canvas.closest(".page") && !c.canvas.closest(".page").hidden);
+      if (!vis) return;
+      try {
+        c.options.devicePixelRatio = on ? Math.max(2, window.devicePixelRatio || 1) : (window.devicePixelRatio || 1);
+        c.resize();
+        if (c.update) c.update("none");
+      } catch (e) {}
+    });
+  }
+  var printReady = false;
+  G3.preparePrint = function () {
+    var p = G3.page(), banner = $("printBanner"), foot = $("printFoot");
+    if (!banner) {
+      banner = document.createElement("div"); banner.id = "printBanner";
+      document.body.insertBefore(banner, document.body.firstChild);
+    }
+    if (!foot) {
+      foot = document.createElement("div"); foot.id = "printFoot";
+      document.body.appendChild(foot);
+    }
+    banner.innerHTML = '<div class="pb-top"><div class="pb-brand">G3 Budget Dashboard</div><div class="pb-tab">' + G3.esc(G3.TITLE[p] || p) + "</div></div>" +
+      '<div class="pb-meta">' + G3.esc(G3.printAsOf()) + "  ·  Printed " + G3.esc(G3.printNowText()) + "</div>" +
+      '<div class="pb-filters">' + G3.esc(G3.printFilters()) + "</div>";
+    foot.innerHTML = '<span>Source: GFEBS SOF / FMZ3 / Master key</span><span class="pb-end">Iowa Army National Guard  ·  G3</span>';
+    banner.hidden = false; foot.hidden = false;
+    document.body.classList.add("printing");
+    if (p === "ulo" && G3.mods.ulo && G3.mods.ulo.ui && !G3.mods.ulo.ui.printAll) {
+      G3.mods.ulo.ui.printAll = true;
+      try { G3.mods.ulo.render(); } catch (e) {}
+    }
+    printResizeCharts(true);
+    printReady = true;
+    return true;
+  };
+  G3.restorePrint = function () {
+    if (!printReady && !document.body.classList.contains("printing")) return;
+    document.body.classList.remove("printing");
+    var banner = $("printBanner"), foot = $("printFoot");
+    if (banner) banner.hidden = true;
+    if (foot) foot.hidden = true;
+    if (G3.mods.ulo && G3.mods.ulo.ui && G3.mods.ulo.ui.printAll) {
+      G3.mods.ulo.ui.printAll = false;
+      if (G3.page() === "ulo") try { G3.mods.ulo.render(); } catch (e) {}
+    }
+    printResizeCharts(false);
+    printReady = false;
+  };
+  G3.printTab = function () {
+    G3.preparePrint();
+    setTimeout(function () { w.print(); }, 120);
   };
   G3.kpi = function (cls, lbl, val, sub, attrs) { return '<div class="kpi ' + (cls || "") + '"' + (attrs || "") + '><div class="lbl">' + lbl + '</div><div class="val">' + val + '</div><div class="sub">' + (sub || "&nbsp;") + "</div></div>"; };
   G3.bindCommon = function (root, mod) {
@@ -583,9 +675,12 @@
     if (saved) { G3.data = saved.data; G3.derive(); } else loadTest();
     if (!G3.state.fy) G3.state.fy = G3.fyOf(G3.asOf());
     document.addEventListener("click", function (e) {
+      if (e.target.closest("[data-print]")) { e.preventDefault(); G3.printTab(); return; }
       var t = e.target.closest("[data-go]"); if (t && !e.target.closest("[data-stop]")) { G3.go(t.getAttribute("data-go")); return; }
       if (e.target.closest("[data-upload]")) $("fileInput").click();
     });
+    w.addEventListener("beforeprint", function () { if (!document.body.classList.contains("printing")) G3.preparePrint(); });
+    w.addEventListener("afterprint", function () { G3.restorePrint(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") openDrawer(false); var t = e.target; if ((e.key === "Enter" || e.key === " ") && t.classList && t.classList.contains("ocard")) { e.preventDefault(); G3.go(t.getAttribute("data-go")); } });
     $("btnUpload").addEventListener("click", function () { $("fileInput").click(); });
     $("fileInput").addEventListener("change", function (e) { loadFiles(e.target.files); this.value = ""; });

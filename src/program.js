@@ -62,7 +62,13 @@
           var av = k === "name" ? a.name : (a[k] || 0), bv = k === "name" ? b.name : (b[k] || 0);
           return (typeof av === "string" ? av.localeCompare(bv) : (av - bv)) * dir;
         });
-        (nodes || []).forEach(function (n) { sortU(n.kids); if (n.tdcs) n.tdcs.sort(function (a, b) { return ((b[k] || b.total) - (a[k] || a.total)) * (k === "name" ? -1 : dir); }); });
+        (nodes || []).forEach(function (n) {
+          sortU(n.kids);
+          if (n.tdcs) n.tdcs.sort(function (a, b) {
+            if (k === "name" || k === "tdc") return String(a.tdc || "").localeCompare(String(b.tdc || "")) * (ui.unitAsc ? 1 : -1);
+            return ((a[k] != null ? a[k] : a.total) - (b[k] != null ? b[k] : b.total)) * dir;
+          });
+        });
       })(utreeAll);
       var qUnit = (ui.unitQ || "").trim().toLowerCase();
       function unitMatch(o) {
@@ -81,41 +87,82 @@
       }
       var utree = filterTree(utreeAll);
       var uTotU = { oblig: G3.sum(utree, "oblig"), disb: G3.sum(utree, "disb"), total: G3.sum(utree, "total") };
-      if (ui.openUnit == null) { ui.openUnit = {}; utree.forEach(function (r) { if (r.id !== "__unmapped__" && r.id !== "__state__") ui.openUnit[r.id] = true; }); }
+      var view = ui.unitView || "msc";
+      if (ui._uv !== view) { ui._uv = view; ui.openUnit = null; }
+      function flatten(nodes, want, acc) {
+        (nodes || []).forEach(function (o) {
+          if (want === "msc" && (o.level === "MSC" || o.id === "__state__" || o.id === "__unmapped__")) acc.push(o);
+          else if (want === "bn" && o.level === "Battalion / Unit") acc.push(o);
+          else if (want === "co" && (o.level === "UIC" || o.level === "Company")) acc.push(o);
+          flatten(o.kids, want, acc);
+        });
+        return acc;
+      }
+      var ulist = view === "tree" ? utree : flatten(utree, view, []).filter(unitMatch);
+      if (ui.openUnit == null) {
+        ui.openUnit = {};
+        if (view === "tree") ulist.forEach(function (r) { if (r.id !== "__unmapped__" && r.id !== "__state__") ui.openUnit[r.id] = true; });
+        else ulist.forEach(function (r) { ui.openUnit[r.id] = true; });
+      }
       function uOpen(id) { return !!(ui.openUnit && ui.openUnit[id]); }
       function lvlClass(o) { return o.level === "MSC" ? "lmsc" : o.level === "Battalion / Unit" ? "lbn" : o.level === "State" ? "lst" : o.level === "TDC" ? "ltdc" : o.level === "DPC" ? "ldpc" : o.id === "__unmapped__" ? "lunmap" : "lco"; }
       function lvlBadge(o) { return o.level === "MSC" ? "MSC" : o.level === "Battalion / Unit" ? "Unit" : o.level === "State" ? "State" : o.level === "TDC" ? "TDC" : o.level === "DPC" ? "DPC" : o.id === "__unmapped__" ? "—" : "Co"; }
-      function unitRowHtml(o, depth, hasKids, open, sh, extraCls, badge, name, code) {
+      function unitSub(o) {
+        if (view === "bn" && (o.mscName || o.msc)) return '<span class="usub">' + G3.esc(o.mscName || G3.unitName(o.msc) || o.msc) + "</span>";
+        if (view === "co") {
+          var bits = [];
+          if (o.bn) bits.push(G3.unitName(o.bn) || o.bn);
+          if (o.msc) bits.push(o.mscName || G3.unitName(o.msc) || o.msc);
+          return bits.length ? '<span class="usub">' + G3.esc(bits.join(" · ")) + "</span>" : "";
+        }
+        return "";
+      }
+      function unitRowHtml(o, depth, hasKids, open, sh, extraCls, badge, name, opts) {
+        opts = opts || {};
         var caret = hasKids ? '<button class="caret" type="button" data-uopen="' + G3.esc(o.id) + '" aria-expanded="' + (open ? "true" : "false") + '" title="' + (open ? "Collapse" : "Expand") + '">' + (open ? "▾" : "▸") + "</button>" : '<span class="caret"></span>';
-        var codeHtml = code ? (o.level === "DPC" ? ' <span class="dpc">' + G3.esc(code) + "</span>" : ' <span class="uic">' + G3.esc(code) + "</span>") : "";
-        return '<tr class="urow l' + depth + " " + lvlClass(o) + (extraCls || "") + (open ? " open" : "") + '"><td class="un">' + caret + '<span class="lvg"></span><span class="lvlb">' + badge + "</span><span class=\"uname\">" + G3.esc(name) + "</span>" + codeHtml + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + "</td>" +
+        var unitCell = opts.hideName ? caret + '<span class="lvg"></span><span class="lvlb">' + badge + "</span>" : caret + '<span class="lvg"></span><span class="lvlb">' + badge + "</span><span class=\"uname\">" + G3.esc(name) + "</span>" + (o.uic && o.level !== "TDC" && o.level !== "DPC" ? ' <span class="uic">' + G3.esc(o.uic) + "</span>" : "") + unitSub(o);
+        var dpcCell = opts.dpcHtml || "";
+        var tdcCell = opts.tdc || "";
+        return '<tr class="urow l' + depth + " " + lvlClass(o) + (extraCls || "") + (open ? " open" : "") + '"><td class="un">' + unitCell + '</td><td class="tdcc">' + tdcCell + '</td><td class="dpcc">' + dpcCell + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + "</td>" +
           '<td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + '%"></i></span>' + G3.pct(sh, 0) + "</td></tr>";
+      }
+      function tdcBlock(unit, depth, out) {
+        (unit.tdcs || []).forEach(function (t) {
+          var topen = uOpen(t.id), tsh = uTotU.total ? t.total / uTotU.total : 0, hasD = !!(t.dpcs && t.dpcs.length);
+          out.push(unitRowHtml(t, depth, hasD, topen, tsh, "", "TDC", t.tdc, { hideName: true, tdc: G3.esc(t.tdc) }));
+          if (topen) (t.dpcs || []).forEach(function (d) {
+            var dpcHtml = '<span class="dpc-desc">' + G3.esc(d.name || d.code || "DPC") + "</span>" + (d.code ? ' <span class="dpc-code">' + G3.esc(d.code) + "</span>" : "");
+            out.push(unitRowHtml(d, depth + 1, false, false, uTotU.total ? d.total / uTotU.total : 0, " ldpc", "DPC", d.name, { hideName: true, tdc: G3.esc(t.tdc), dpcHtml: dpcHtml }));
+          });
+        });
+      }
+      function groupRow(label, depth, tot) {
+        return '<tr class="urow l' + depth + ' lgrp"><td class="un" colspan="3"><span class="caret"></span><span class="lvg"></span>' + G3.esc(label) + '</td><td class="num"></td><td class="num"></td><td class="num"><strong>' + G3.whole(tot) + '</strong></td><td class="num"></td></tr>';
       }
       function unitTdcRows(nodes, depth, out) {
         (nodes || []).forEach(function (o) {
-          var tdcs = o.tdcs || [], hasKids = !!(o.kids && o.kids.length) || tdcs.length, open = hasKids && uOpen(o.id), sh = uTotU.total ? o.total / uTotU.total : 0;
-          out.push(unitRowHtml(o, depth, hasKids, open, sh, o.id === "__unmapped__" ? " unmap" : (o.id === "__state__" ? " state" : ""), lvlBadge(o), o.name, o.uic));
+          var tdcs = o.tdcs || [], hasKids = (view === "tree" && o.kids && o.kids.length) || tdcs.length, open = hasKids && uOpen(o.id), sh = uTotU.total ? o.total / uTotU.total : 0;
+          out.push(unitRowHtml(o, depth, hasKids, open, sh, o.id === "__unmapped__" ? " unmap" : (o.id === "__state__" ? " state" : ""), lvlBadge(o), o.name, {}));
           if (open) {
-            if (o.kids && o.kids.length) unitTdcRows(o.kids, depth + 1, out);
-            tdcs.forEach(function (t) {
-              var topen = uOpen(t.id), tsh = uTotU.total ? t.total / uTotU.total : 0, hasD = !!(t.dpcs && t.dpcs.length);
-              out.push(unitRowHtml(t, depth + 1, hasD, topen, tsh, "", "TDC", t.tdc, ""));
-              if (topen) (t.dpcs || []).forEach(function (d) {
-                out.push(unitRowHtml(d, depth + 2, false, false, uTotU.total ? d.total / uTotU.total : 0, " ldpc", "DPC", d.name, d.code));
-              });
-            });
+            if (view === "tree" && o.kids && o.kids.length) unitTdcRows(o.kids, depth + 1, out);
+            if (tdcs.length) {
+              if (view === "tree" && o.kids && o.kids.length) out.push(groupRow("By TDC / DPC · " + o.name, depth + 1, o.total));
+              tdcBlock(o, view === "tree" && o.kids && o.kids.length ? depth + 1 : depth + 1, out);
+            }
           }
         });
         return out;
       }
       if (utreeAll.length || (G3.data.hasUnits && hasJoin)) {
-        var uth = [["name", "Unit"], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"], ["total", "Total", "num"], ["share", "% of spending", "num"]];
-        h += '<div class="panel unitdpc" id="' + id + 'UnitDpc"><div class="tablehead"><h2>Unit spending by DPC</h2><span class="muted small">SOF obligations + disbursements with Order (DPC) from FMZ3, limited to this program. Expand a unit (MSC, battalion, or company) to see its TDCs, then each DPC by description.</span>' +
+        var uth = [["name", "Unit"], ["tdc", "TDC", ""], ["dpc", "DPC", ""], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"], ["total", "Total", "num"], ["share", "% of spending", "num"]];
+        var viewHint = view === "tree" ? "Tree view keeps the unit hierarchy. Under each MSC, battalion, or company a By TDC / DPC group shows rolled-up spending." : "Each " + (view === "msc" ? "MSC" : view === "bn" ? "battalion / unit" : "company") + " expands to its TDC totals, then each DPC (description and code) with the TDC it falls under.";
+        h += '<div class="panel unitdpc" id="' + id + 'UnitDpc"><div class="tablehead"><h2>Unit spending by DPC</h2><span class="muted small">SOF obligations + disbursements with Order (DPC) from FMZ3, limited to this program. View spending by MSC, battalion / unit, or company — TDC and DPC at every level.</span>' +
           '<div class="unitacts"><button class="btn sm" type="button" id="' + id + 'UnitExpand">Expand all</button><button class="btn sm ghost" type="button" id="' + id + 'UnitCollapse">Collapse all</button></div></div>' +
-          '<div class="filters"><label class="ufl u-search grow">Search units or DPCs<input type="search" data-ui="unitQ" value="' + G3.esc(ui.unitQ || "") + '" placeholder="Unit, UIC, TDC, DPC"></label></div>';
-        h += '<div class="tablewrap"><table class="grid unit"><thead><tr>' + uth.map(function (col) { return '<th data-uk="' + col[0] + '" class="' + (col[2] || "") + (col[0] === (ui.unitSort || "total") ? " sorted" + (ui.unitAsc ? " asc" : "") : "") + '">' + col[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
-          (utree.length ? unitTdcRows(utree, 1, []).join("") : '<tr><td colspan="5" class="muted">' + (qUnit ? "No units or DPCs match that search." : "No UIC spending for this program yet.") + "</td></tr>") +
-          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(uTotU.oblig) + '</td><td class="num">' + G3.whole(uTotU.disb) + '</td><td class="num">' + G3.whole(uTotU.total) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
+          '<div class="filters"><div class="segwrap"><span class="seglbl">Show spending by</span>' + G3.seg("unitView", [["msc", "MSC"], ["bn", "Battalion / Unit"], ["co", "Company"], ["tree", "Tree"]], view) + "</div>" +
+          '<label class="ufl u-search grow">Search units or DPCs<input type="search" data-ui="unitQ" value="' + G3.esc(ui.unitQ || "") + '" placeholder="Unit, UIC, TDC, DPC"></label></div>';
+        h += '<div class="tablewrap"><table class="grid unit udpc"><thead><tr>' + uth.map(function (col) { return '<th data-uk="' + col[0] + '" class="' + (col[2] || "") + (col[0] === (ui.unitSort || "total") ? " sorted" + (ui.unitAsc ? " asc" : "") : "") + '">' + col[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          (ulist.length ? unitTdcRows(ulist, 1, []).join("") : '<tr><td colspan="7" class="muted">' + (qUnit ? "No units or DPCs match that search." : "No UIC spending for this program yet.") + "</td></tr>") +
+          '</tbody><tfoot><tr><td colspan="3">Program total</td><td class="num">' + G3.whole(uTotU.oblig) + '</td><td class="num">' + G3.whole(uTotU.disb) + '</td><td class="num">' + G3.whole(uTotU.total) + '</td><td class="num">100%</td></tr></tfoot></table></div><p class="hint">' + viewHint + "</p></div>";
       }
       // DPC detail
       if (!noDpc && R.dps.length) {
@@ -131,15 +178,15 @@
         old.map(function (u) { return "<tr" + (u.days > 180 ? ' class="red"' : u.days > 90 ? ' class="amber"' : "") + '><td>' + G3.ciPill(u.type) + '</td><td class="wrapc">' + G3.esc(u.desc) + '</td><td class="wrapc small">' + G3.esc(G3.dpcName(u.order) || u.order) + '</td><td class="num"><span class="agepill" style="--bc:' + G3.mods.ulo.BCOL[u.b] + '">' + u.days + 'd</span></td><td class="num"><strong>' + G3.whole(u.open) + "</strong></td></tr>"; }).join("") + (old.length ? "" : '<tr><td colspan="5" class="muted">Nothing open.</td></tr>') + "</tbody></table></div></div></div>";
       root.innerHTML = h;
       G3.bindCommon(root, M);
-      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; ui.openUnit = null; ui.unitQ = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
+      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; ui.openUnit = null; ui.unitQ = ""; ui.unitView = "msc"; ui._uv = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
       root.querySelectorAll("tr.tdcr").forEach(function (tr) { tr.onclick = function () { var t = tr.getAttribute("data-tdc"); ui.tdc = ui.tdc === t ? "" : t; M.render(); }; });
       var all = G3.$(id + "AllTdc"); if (all) all.onclick = function () { ui.tdc = ""; M.render(); };
       G3.$(id + "Ulo").onclick = function () { G3.mods.ulo.ui.page = 0; G3.go("ulo"); };
-      function collectUnitIds(nodes, acc) {
-        (nodes || []).forEach(function (o) { acc.push(o.id); collectUnitIds(o.kids, acc); });
+      function collectUnitIds(nodes, acc, treeWalk) {
+        (nodes || []).forEach(function (o) { acc.push(o.id); if (treeWalk) collectUnitIds(o.kids, acc, true); });
         return acc;
       }
-      var ux = G3.$(id + "UnitExpand"); if (ux) ux.onclick = function () { ui.openUnit = {}; collectUnitIds(utree, []).forEach(function (k) { ui.openUnit[k] = true; }); M.render(); };
+      var ux = G3.$(id + "UnitExpand"); if (ux) ux.onclick = function () { ui.openUnit = {}; collectUnitIds(ulist, [], view === "tree").forEach(function (k) { ui.openUnit[k] = true; }); M.render(); };
       var uc = G3.$(id + "UnitCollapse"); if (uc) uc.onclick = function () { ui.openUnit = {}; M.render(); };
       root.querySelectorAll("#" + id + "UnitDpc [data-uopen]").forEach(function (b) { b.onclick = function () { ui.openUnit = ui.openUnit || {}; var k = b.getAttribute("data-uopen"); ui.openUnit[k] = !ui.openUnit[k]; M.render(); }; });
       root.querySelectorAll("#" + id + "UnitDpc th[data-uk]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-uk"); if (kk === "share") kk = "total"; if (ui.unitSort === kk) ui.unitAsc = !ui.unitAsc; else { ui.unitSort = kk; ui.unitAsc = kk === "name"; } M.render(); }; });
