@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Inline src/ into one self-contained file: g3-dashboard.html (no network needed)."""
+"""Inline src/ into one self-contained file: g3-dashboard.html (no network needed).
+
+To publish to GitHub Pages (index.html, g3-dashboard.html, and the /download
+page), run ./publish.sh --push.
+"""
 import pathlib
 root = pathlib.Path(__file__).parent; src = root / "src"
 css = (src / "base.css").read_text() + "\n" + (src / "g3.css").read_text()

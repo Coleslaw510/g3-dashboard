@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download G3 Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e3a8a'/%3E%3Cpath d='M8 23V14M14 23V9M20 23v-6M26 23V12' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f4f6fa; --panel:#fff; --panel2:#f8fafc; --line:#e3e8f0; --line2:#eef2f7;
+  --text:#0f172a; --muted:#64748b; --soft:#94a3b8;
+  --accent:#2563eb; --accent2:#1d4ed8; --navy:#1e3a8a;
+  --radius:14px; --shadow:0 1px 2px rgba(15,23,42,.05),0 4px 16px rgba(15,23,42,.06);
+  --font:"Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100vh}
+.wrap{max-width:1360px;margin:0 auto;padding:0 22px}
+svg.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+header.top{background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:18px;height:62px}
+.brand{display:flex;align-items:center;gap:10px;background:none;border:0;color:var(--text);font-weight:750;font-size:1.05rem;padding:0;white-space:nowrap;text-decoration:none}
+.brand .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#1e3a8a);color:#fff;display:grid;place-items:center}
+.tools{display:flex;align-items:center;gap:10px;margin-left:auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 15px;font-weight:650;font-size:.9rem;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:#cbd5e1;background:#f8fafc}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent2)}
+.btn.ghost{background:transparent}
+.btn.lg{padding:16px 28px;font-size:1.08rem;border-radius:12px}
+main{padding:48px 22px 72px}
+.card{max-width:560px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:36px 36px 32px;box-shadow:var(--shadow)}
+.eyebrow{color:var(--accent);font-weight:700;font-size:.8rem;letter-spacing:1.4px;text-transform:uppercase}
+h1{font-size:2rem;letter-spacing:-.5px;margin:.2em 0 28px}
+.actions{display:flex;flex-direction:column;align-items:flex-start;gap:14px}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:32px;padding-top:22px;border-top:1px solid var(--line)}
+.stat .l{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.6px;font-weight:650}
+.stat .v{font-size:1.02rem;font-weight:750;letter-spacing:-.2px;margin-top:4px;font-variant-numeric:tabular-nums}
+.stat .v a{color:var(--text);text-decoration:none}
+.stat .v a:hover{color:var(--accent)}
+.actions a:not(.btn){color:var(--accent);font-weight:650;text-decoration:none}
+.actions a:not(.btn):hover{color:var(--accent2);text-decoration:underline}
+@media(max-width:640px){
+  .card{padding:28px 22px}
+  .meta{grid-template-columns:1fr;gap:16px}
+  .bname{display:none}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-sof" viewBox="0 0 24 24"><path d="M3 20h18"/><rect x="4.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="8" width="3" height="12" rx=".6"/><rect x="16.5" y="4" width="3" height="16" rx=".6"/><path d="M4 8.5 9 5l3 2 5-4"/><path d="M14.5 3H17v2.5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 15v3.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V15"/></symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="wrap bar">
+    <a class="brand" href="../">
+      <span class="mark"><svg class="ic"><use href="#i-sof"/></svg></span><span class="bname">G3 Dashboard</span>
+    </a>
+    <div class="tools">
+      <a class="btn ghost" href="../">Open online</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="card">
+    <div class="eyebrow">G3 Dashboard</div>
+    <h1>Latest download</h1>
+    <div class="actions">
+      <a class="btn primary lg" id="dl" href="../g3-dashboard.html" download="g3-dashboard.html">
+        <svg class="ic"><use href="#i-down"/></svg>
+        Download latest G3 Dashboard
+      </a>
+      <a href="../">Open online</a>
+    </div>
+    <div class="meta">
+      <div class="stat">
+        <div class="l">Last updated</div>
+        <div class="v" id="updated">—</div>
+      </div>
+      <div class="stat">
+        <div class="l">Version</div>
+        <div class="v" id="commit">—</div>
+      </div>
+      <div class="stat">
+        <div class="l">File size</div>
+        <div class="v" id="size">—</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function(){
+  function fmtSize(n){
+    n = +n;
+    if (!n && n !== 0) return '—';
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return Math.round(n / 1024) + ' KB';
+    return n + ' B';
+  }
+  fetch('../version.json', {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : Promise.reject(); }).then(function(v){
+    var u = document.getElementById('updated');
+    if (v.updatedIso) {
+      var t = document.createElement('time');
+      t.dateTime = v.updatedIso;
+      t.textContent = v.updated || v.updatedIso;
+      u.replaceChildren(t);
+    } else if (v.updated) {
+      u.textContent = v.updated;
+    }
+    var c = document.getElementById('commit');
+    if (v.commit) {
+      var a = document.createElement('a');
+      a.href = 'https://github.com/Coleslaw510/g3-dashboard/commit/' + v.commit;
+      a.textContent = v.commit;
+      c.replaceChildren(a);
+    }
+    document.getElementById('size').textContent = fmtSize(v.sizeBytes);
+    if (v.file) document.getElementById('dl').setAttribute('download', v.file);
+  }).catch(function(){});
+})();
+</script>
+</body>
+</html>
