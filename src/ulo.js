@@ -16,7 +16,7 @@
       });
     });
   };
-  M.rows = function (filter) { return M.all().filter(function (r) { return G3.pgOk(r.pg) && (!filter || filter(r)); }); };
+  M.rows = function (filter) { return M.all().filter(function (r) { return G3.filterOk(r) && (!filter || filter(r)); }); };
   M.typeCol = function (t) { return G3.ciCol(t); };
   var PER = 25;
   M.render = function (focus) {
@@ -25,11 +25,11 @@
     var openT = G3.sum(rows, "open"), totT = G3.sum(rows, "total"), o90 = rows.filter(function (r) { return r.days > 90; }), o180 = rows.filter(function (r) { return r.days > 180; });
     var avg = rows.length ? G3.sum(rows, "days") / rows.length : 0, oldest = rows.reduce(function (m, r) { return Math.max(m, r.days); }, 0);
     var types = Object.keys(G3.group(all, "type")).sort(function (a, b) { return G3.ciLabel(a).localeCompare(G3.ciLabel(b)); });
-    var h = G3.head("ulo", "i-ulo", "Unliquidated", "All open FMZ3 lines &middot; days open counted from Posting Date to " + G3.dateText(G3.data.asOf) + " &middot; " + (G3.state.pg === "All" ? "All pay groups" : "Pay group " + G3.esc(G3.state.pg)));
+    var h = G3.head("ulo", "i-ulo", "Unliquidated", "All open FMZ3 lines &middot; days open counted from Posting Date to " + G3.dateText(G3.data.asOf) + " &middot; " + (G3.USE_PAYGROUPS ? (G3.state.pg === "All" ? "All pay groups" : "Pay group " + G3.esc(G3.state.pg)) : (G3.state.fund === "All" ? "All funds" : "Fund " + G3.esc(G3.state.fund))));
     h += '<div class="filters"><label class="grow">Search<input type="search" data-ui="q" placeholder="Traveler, FMZ number, header text, DPC, supplier" value="' + G3.esc(ui.q) + '"></label>' +
       '<label>Commitment item<select data-ui="ci"><option value="">All commitment items</option>' + types.map(function (c) { return '<option value="' + G3.esc(c) + '"' + (c === ui.ci ? " selected" : "") + ">" + G3.esc(G3.ciName(c) ? G3.ciName(c) + " (" + c + ")" : c) + "</option>"; }).join("") + "</select></label>" +
       '<label>Days open<select data-ui="age"><option value="">Any age</option>' + M.BUCKETS.map(function (b, i) { return '<option value="' + i + '"' + (String(i) === ui.age ? " selected" : "") + ">" + b[0] + " days</option>"; }).join("") + "</select></label>" +
-      G3.pgSeg() + '<button class="btn" type="button" id="uloReset">Reset</button></div>' + G3.pgNote("ulo");
+      G3.filterSeg() + '<button class="btn" type="button" id="uloReset">Reset</button></div>' + G3.filterNote("ulo");
     var zero = G3.data.sets.fmz3 && G3.data.sets.fmz3.report.skipped["zero-open rows excluded"];
     h += '<div class="kpis">' +
       G3.kpi("", "Open amount", G3.money(openT), G3.pct(totT ? openT / totT : null, 0) + " of " + G3.money(totT) + " original total", ' style="--st:#d97706"') +
@@ -52,19 +52,19 @@
       vis.map(function (r) {
         var fl = r.days > 180 ? "red" : r.days > 90 ? "amber" : "", op = ui.open[r._i], dn = G3.dpcName(r.order);
         var s = '<tr class="ulr ' + fl + '" data-row="' + r._i + '"><td class="caret">' + (op ? "\u25BE" : "\u25B8") + '</td><td class="cic">' + G3.ciPill(r.type) + '</td><td class="wrapc">' + (r.traveler ? '<strong>' + G3.esc(r.desc) + '</strong>' : G3.esc(r.desc)) + '</td><td class="wrapc small">' + (dn ? G3.esc(dn) : G3.esc(r.order || "")) + "</td><td>" + G3.dateText(r.date) + '</td><td class="num"><span class="agepill" style="--bc:' + M.BCOL[r.b] + '">' + r.days + 'd</span></td><td class="num">' + G3.full(r.total) + '</td><td class="num"><strong>' + G3.full(r.open) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (r.liq * 100).toFixed(0) + '%;background:#16a34a"></i></span>' + G3.pct(r.liq, 0) + "</td></tr>";
-        if (op) s += '<tr class="uldet"><td></td><td colspan="8"><div class="detgrid">' + det("FMZ number (Earmarked Funds)", r.fmz) + det("Document type", r.dt) + det("Reference", r.ref) + det("Document Header Text", r.hdr) + det("Commitment item", r.ci + (G3.ciName(r.ci) ? " \u2013 " + G3.ciName(r.ci) : "")) + det("Functional Area", r.fa) + det("Pay group", r.pg || "None (other appropriation)") + det("Order (DPC)", r.order + (dn ? " \u2013 " + dn : "")) + det("Fund", r.fund) + det("Funds Center", r.fc) + det("Cost Center", r.cc) + det("G/L Account", r.gl) + det("Supplier", r.supplier) + det("Created by", r.by) + det("Document Date", G3.dateText(r.docdate)) + det("Text", r.text) + "</div></td></tr>";
+        if (op) s += '<tr class="uldet"><td></td><td colspan="8"><div class="detgrid">' + det("FMZ number (Earmarked Funds)", r.fmz) + det("Document type", r.dt) + det("Reference", r.ref) + det("Document Header Text", r.hdr) + det("Commitment item", r.ci + (G3.ciName(r.ci) ? " \u2013 " + G3.ciName(r.ci) : "")) + det("Functional Area", r.fa) + det(G3.USE_PAYGROUPS ? "Pay group" : "Fund", G3.USE_PAYGROUPS ? (r.pg || "None (other appropriation)") : (r.fund || "—")) + det("Order (DPC)", r.order + (dn ? " \u2013 " + dn : "")) + det("Fund (report)", r.fundRaw || r.fund || "") + det("Funds Center", r.fc) + det("Cost Center", r.cc) + det("G/L Account", r.gl) + det("Supplier", r.supplier) + det("Created by", r.by) + det("Document Date", G3.dateText(r.docdate)) + det("Text", r.text) + "</div></td></tr>";
         return s;
       }).join("") + (vis.length ? "" : '<tr><td colspan="9" class="muted">Nothing matches the current filters.</td></tr>') + "</tbody></table></div>" +
       '<div class="pager"><button class="btn sm" type="button" data-pg="-1"' + (ui.page ? "" : " disabled") + '>&lsaquo; Prev</button><span class="muted small">Page ' + (ui.page + 1) + " of " + pages + '</span><button class="btn sm" type="button" data-pg="1"' + (ui.page < pages - 1 ? "" : " disabled") + ">Next &rsaquo;</button></div></div>";
     root.innerHTML = h;
     G3.bindCommon(root, M);
     if (focus) { var inp = root.querySelector('[data-ui="' + focus + '"]'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
-    G3.$("uloReset").onclick = function () { Object.assign(ui, { q: "", ci: "", age: "", page: 0, open: {} }); G3.state.pg = "All"; G3.refresh(); };
+    G3.$("uloReset").onclick = function () { Object.assign(ui, { q: "", ci: "", age: "", page: 0, open: {} }); G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
     root.querySelectorAll("[data-age]").forEach(function (b) { b.onclick = function () { var v = b.getAttribute("data-age"); ui.age = ui.age === v ? "" : v; ui.page = 0; M.render(); }; });
     root.querySelectorAll("tr.ulr").forEach(function (tr) { tr.onclick = function () { var i = tr.getAttribute("data-row"); ui.open[i] = !ui.open[i]; M.render(); }; });
     root.querySelectorAll("th[data-k]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-k"); if (ui.sort === kk) ui.asc = !ui.asc; else { ui.sort = kk; ui.asc = ["type", "desc", "acctName", "order", "date"].indexOf(kk) >= 0; } M.render(); }; });
     root.querySelectorAll("[data-pg]").forEach(function (b) { b.onclick = function () { ui.page += +b.getAttribute("data-pg"); M.render(); }; });
-    G3.$("uloCsv").onclick = function () { G3.csv([["FMZ number", "Pay group", "Commitment item", "Commitment item description", "Description", "Traveler", "DPC", "DPC description", "Posting date", "Days open", "Total", "Open", "Document Header Text", "Functional Area", "Reference", "Supplier"]].concat(rows.map(function (r) { return [r.fmz, r.pg, r.type, G3.ciName(r.type), r.desc, r.traveler, r.order, G3.dpcName(r.order), r.date, r.days, r.total.toFixed(2), r.open.toFixed(2), r.hdr, r.fa, r.ref, r.supplier]; })), "G3-Unliquidated.csv"); };
+    G3.$("uloCsv").onclick = function () { G3.csv([["FMZ number", G3.USE_PAYGROUPS ? "Pay group" : "Fund", "Commitment item", "Commitment item description", "Description", "Traveler", "DPC", "DPC description", "Posting date", "Days open", "Total", "Open", "Document Header Text", "Functional Area", "Reference", "Supplier"]].concat(rows.map(function (r) { return [r.fmz, G3.USE_PAYGROUPS ? r.pg : r.fund, r.type, G3.ciName(r.type), r.desc, r.traveler, r.order, G3.dpcName(r.order), r.date, r.days, r.total.toFixed(2), r.open.toFixed(2), r.hdr, r.fa, r.ref, r.supplier]; })), "G3-Unliquidated.csv"); };
     var tys = Object.keys(G3.group(rows, "type")).sort();
     G3.chart("cUloAge", { type: "bar", data: { labels: M.BUCKETS.map(function (b) { return b[0] + " days"; }), datasets: tys.map(function (t) { return { label: G3.ciLabel(t), data: M.BUCKETS.map(function (b, i) { return G3.sum(rows.filter(function (r) { return r.type === t && r.b === i; }), "open"); }), backgroundColor: M.typeCol(t), stack: "a" }; }) }, options: { scales: { x: { stacked: true, grid: { display: false } }, y: Object.assign({ stacked: true }, G3.axMoney) }, plugins: { tooltip: G3.tipMoney } } });
     var byA = Object.keys(G3.group(rows, function (r) { return r.pg || "No pay group"; })).map(function (a) { var rr = rows.filter(function (r) { return (r.pg || "No pay group") === a; }); return { a: a, v: G3.sum(rr, "open"), o: G3.sum(rr.filter(function (r) { return r.days > 90; }), "open"), n: rr.length }; }).sort(function (x, y) { return y.v - x.v; });

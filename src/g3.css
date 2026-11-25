@@ -100,14 +100,59 @@ td.cic{white-space:nowrap}
 #page-sof table.acct th,#page-sof table.acct td{padding-left:8px;padding-right:8px}
 #page-sof table.acct td:first-child{white-space:normal;min-width:150px}
 
-/* Spending by Unit (Status of Funds) */
-table.unit td.un{white-space:normal;min-width:220px}
-table.unit .caret{border:0;background:none;cursor:pointer;color:var(--muted);width:20px;padding:0;font-size:.9rem;margin-right:2px}
-table.unit tr.l2 td.un{padding-left:28px}
-table.unit tr.l3 td.un{padding-left:52px}
+/* Spending by Unit (Status of Funds) — color-coded MSC > Unit > Company > DPC tree */
+table.unit td.un{white-space:normal;min-width:280px;position:relative}
+table.unit .caret{border:0;background:#eef2ff;cursor:pointer;color:#1e3a5f;width:28px;height:28px;min-width:28px;padding:0;font-size:1.05rem;line-height:28px;margin-right:8px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+table.unit .caret:hover,table.unit .caret:focus{background:#dbeafe;outline:2px solid #93c5fd;outline-offset:1px}
+table.unit span.caret{background:none;width:28px;min-width:28px;visibility:hidden}
+table.unit tr.l2 td.un{padding-left:32px}
+table.unit tr.l3 td.un{padding-left:56px}
+table.unit tr.l4 td.un{padding-left:80px}
+table.unit tr.l5 td.un{padding-left:104px}
 table.unit .uname{font-weight:650}
 table.unit .uic{font-size:.72rem;color:var(--soft);font-family:ui-monospace,Menlo,monospace;margin-left:6px;white-space:nowrap}
-table.unit tr.unmap .uname{color:var(--muted);font-style:italic}
+table.unit tr.unmap .uname,table.unit tr.lhq .uname{color:var(--muted);font-style:italic}
+table.unit tbody tr.urow{border-left:4px solid transparent}
+table.unit tbody tr.urow:hover{background:#f8fafc}
+table.unit tbody tr.urow:nth-child(even){background:#fafbfc}
+table.unit tbody tr.urow:nth-child(even):hover{background:#f1f5f9}
+table.unit tr.lmsc{background:#eef4fb;border-left-color:#1d4ed8}
+table.unit tr.lmsc .uname{font-weight:800;color:#1e3a5f;font-size:1.02rem}
+table.unit tr.lmsc:nth-child(even){background:#e8f0fa}
+table.unit tr.lbn{border-left-color:#0d9488}
+table.unit tr.lco{border-left-color:#7c3aed}
+table.unit tr.ldpc{border-left-color:#c9a227;color:#3f3f1f}
+table.unit tr.ldpc .uname{font-weight:550}
+table.unit tr.lst,table.unit tr.state{border-left-color:#64748b;background:#f8fafc}
+table.unit tr.lhq{border-left-color:#94a3b8}
+table.unit tr.open td.un .caret{background:#dbeafe;color:#1d4ed8}
+table.unit .lvlb{display:inline-block;font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:2px 7px;margin-right:8px;vertical-align:middle;line-height:1.3}
+table.unit tr.lmsc .lvlb{background:#1d4ed8;color:#fff}
+table.unit tr.lbn .lvlb{background:#0d9488;color:#fff}
+table.unit tr.lco .lvlb{background:#7c3aed;color:#fff}
+table.unit tr.ldpc .lvlb{background:#c9a227;color:#1f1b08}
+table.unit tr.lst .lvlb,table.unit tr.state .lvlb{background:#64748b;color:#fff}
+table.unit tr.lhq .lvlb{background:#e2e8f0;color:#475569}
+table.unit tr.lunmap .lvlb,table.unit tr.unmap .lvlb{background:#e2e8f0;color:#64748b}
+table.unit .lvg{display:none}
+table.unit td.num .xbar{display:inline-block;width:52px;height:8px;background:#e2e8f0;border-radius:99px;margin-right:6px;vertical-align:middle;overflow:hidden}
+table.unit td.num .xbar i{display:block;height:100%;border-radius:99px;background:currentColor}
+table.unit tr.lmsc td.num .xbar i{background:#1d4ed8}
+table.unit tr.lbn td.num .xbar i{background:#0d9488}
+table.unit tr.lco td.num .xbar i{background:#7c3aed}
+table.unit tr.ldpc td.num .xbar i{background:#c9a227}
+table.unit tr.lst td.num .xbar i,table.unit tr.state td.num .xbar i{background:#64748b}
 .hacc.hunit{margin-top:14px}
 .hacc.hunit .fi{background:#2563eb}
-#unitPanel .tablehead{gap:10px}
+#unitPanel .tablehead,#uicDpcPanel .tablehead{gap:10px;flex-wrap:wrap}
+#unitPanel .unitacts{display:flex;gap:8px;margin-left:auto;align-items:center}
+#uicDpcPanel label.ufl{margin:0;min-width:200px;flex:1}
+/* Color-coded unit / DPC filter selects */
+.filters label.ufl{border-radius:10px;padding:6px 8px 8px;background:#f8fafc;border:1px solid var(--line);border-top:3px solid var(--ufl,#94a3b8)}
+.filters label.ufl.u-msc{--ufl:#1d4ed8;background:#eef4fb}
+.filters label.ufl.u-bn{--ufl:#0d9488;background:#f0fdfa}
+.filters label.ufl.u-co{--ufl:#7c3aed;background:#f5f3ff}
+.filters label.ufl.u-dpc{--ufl:#c9a227;background:#fffbeb}
+.filters label.ufl.u-search{--ufl:#2563eb;background:#fff}
+.filters label.ufl select,.filters label.ufl input{background:#fff;padding:9px 11px;border-radius:8px;min-height:38px}
+.filters label.ufl select:focus,.filters label.ufl input:focus{outline:2px solid color-mix(in srgb, var(--ufl) 35%, #fff);border-color:var(--ufl)}

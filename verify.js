@@ -8,7 +8,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const fp = () => p.evaluate(() => {
     const o = {}, fys = G3.data.fys;
     fys.forEach(fy => ['All'].concat(G3.PAYGROUPS).forEach(pg => ['tdp', 'afp', 'allot'].forEach(v => { G3.state.pg = pg; const t = G3.totals(G3.lines(fy), G3.funding(fy), v); o[fy + pg + v] = [t.level, t.commit, t.oblig, t.disb, t.exec, t.bal].map(x => Math.round(x * 100)); })));
-    G3.state.pg = 'All'; const cf = G3.fyOf(G3.asOf());
+    G3.state.fund = 'All'; G3.state.pg = 'All'; const cf = G3.fyOf(G3.asOf());
     o.dpc = G3.dpcRollup(cf).map(d => d.code + ':' + Math.round(d.total * 100) + ':' + d.tdc).join('|');
     o.ulo = [G3.data.ulo.length, Math.round(G3.sum(G3.data.ulo, 'open') * 100)];
     o.plan = G3.data.plan.map(r => r.account + ':' + Math.round(G3.sum(r.m, x => x) * 100)).sort().join('|');
@@ -20,8 +20,11 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const r = await p.evaluate(() => {
     const S = G3.data.sets, c = S.commit, raw = G3.makeTestFiles().find(f => /Commit/.test(f.name)).sheets[0].aoa;
     const hdr = raw[0], iE = hdr.indexOf('Entry Type'), iA = hdr.indexOf('Amount');
-    const rawC = raw.slice(1).filter(x => /commit/i.test(x[iE])), rawO = raw.slice(1).filter(x => /oblig/i.test(x[iE])), rawX = raw.slice(1).filter(x => !/commit|oblig/i.test(x[iE]));
-    const cur = G3.fyOf(G3.asOf()); G3.state.pg = 'All';
+    const iIo = hdr.indexOf('Internal Order');
+    const kept = x => !G3.excludedDpc(x[iIo]);
+    const rawC = raw.slice(1).filter(x => /commit/i.test(x[iE]) && kept(x)), rawO = raw.slice(1).filter(x => /oblig/i.test(x[iE]) && kept(x)), rawX = raw.slice(1).filter(x => !/commit|oblig/i.test(x[iE]));
+    const rawExcl = raw.slice(1).filter(x => /commit|oblig/i.test(x[iE]) && !kept(x));
+    const cur = G3.fyOf(G3.asOf()); G3.state.fund = 'All'; G3.state.pg = 'All';
     const commitLines = G3.data.lines.filter(l => l.src === 'commit');
     const planRaw = G3.makeTestFiles().find(f => /Spend Plan FY/.test(f.name)).sheets[0].aoa, key = G3.makeTestFiles()[0].sheets.find(s => s.name === 'Spend Plan').aoa;
     const prio2acct = {}; key.slice(1).forEach(x => prio2acct[x[0]] = x[1]);
@@ -31,11 +34,16 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     const idtPlan = G3.data.plan.filter(x => x.account === 'IDT').reduce((s, x) => s + x.m.reduce((a, v) => a + v, 0), 0);
     const fz = G3.makeTestFiles().find(f => /FMZ3/.test(f.name)).sheets[0].aoa, fo = fz[0].indexOf('Amount Open (TC)');
     return {
-      rawNeg: rawC.every(x => +x[iA] < 0), allPos: c.rows.every(x => x.amt > 0), nC: rawC.length, nO: rawO.length, nX: rawX.length,
+      rawNeg: rawC.every(x => +x[iA] < 0), allPos: c.rows.every(x => x.amt > 0), nC: rawC.length, nO: rawO.length, nX: rawX.length, nExcl: rawExcl.length, skippedExcl: c.report.skipped['excluded DPC (NGDFHDOU)'] || 0,
       rowsC: c.rows.filter(x => x.type === 'commit').length, rowsO: c.rows.filter(x => x.type === 'oblig').length,
       commitInTotals: Math.round(G3.sum(G3.lines(cur), 'commit')), commitRows: Math.round(G3.sum(c.rows.filter(x => x.type === 'commit'), 'amt')),
       obligFromCommitInLines: commitLines.filter(l => l.oblig || l.disb).length, commitLineCount: commitLines.length,
-      dpcOblig: Math.round(G3.sum(G3.dpcRollup(cur), 'oblig')), obligRows: Math.round(G3.sum(c.rows.filter(x => x.type === 'oblig'), 'amt')),
+      dpcOblig: Math.round(G3.sum(G3.dpcRollup(cur), 'oblig')), dpcDisb: Math.round(G3.sum(G3.dpcRollup(cur), 'disb')), dpcCommit: Math.round(G3.sum(G3.dpcRollup(cur), 'commit')),
+      obligRows: Math.round(G3.sum(c.rows.filter(x => x.type === 'oblig'), 'amt')),
+      commitRows: Math.round(G3.sum(c.rows.filter(x => x.type === 'commit'), 'amt')),
+      exOblig: Math.round(G3.sum(G3.data.lines.filter(l => l.src === 'export' && l.fy === cur), 'oblig')),
+      exDisb: Math.round(G3.sum(G3.data.lines.filter(l => l.src === 'export' && l.fy === cur), 'disb')),
+      hasSofDpc: !!G3.data.hasSofDpc,
       notes: c.report.notes.concat(Object.keys(c.report.skipped).map(k => c.report.skipped[k] + ' ' + k)),
       zeroRaw: fz.slice(1).filter(x => Math.abs(+x[fo]) < 0.005).length, zeroSkipped: S.fmz3.report.skipped['zero-open rows excluded'], zeroLoaded: G3.data.ulo.filter(u => !(u.open > 0)).length,
       trav: [G3.traveler('traveler:smithjohn'), G3.traveler('TRAVELER: SMITH, JOHN'), G3.traveler('Traveler:JohnsonMaria')],
@@ -45,9 +53,9 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   });
   console.log(JSON.stringify(r, null, 1));
   ok(r.rawNeg && r.allPos, 'commitments sign flip (raw negative -> loaded positive)');
-  ok(r.rowsC === r.nC && r.rowsO === r.nO && r.nO > 0, 'entry-type filter keeps commitment (' + r.rowsC + ') and obligation (' + r.rowsO + ') rows, ignores ' + r.nX + ' others');
+  ok(r.rowsC === r.nC && r.rowsO === r.nO && r.nO > 0 && r.nExcl === r.skippedExcl && r.nExcl === 2, 'entry-type filter keeps commitment (' + r.rowsC + ') and obligation (' + r.rowsO + ') rows, ignores ' + r.nX + ' other types, drops ' + r.nExcl + ' excluded DPC rows');
   ok(r.commitInTotals === r.commitRows && r.obligFromCommitInLines === 0 && r.commitLineCount === r.rowsC, 'obligation rows NOT in execution totals');
-  ok(r.dpcOblig === r.obligRows && r.obligRows > 0, 'obligation rows ARE in spending by DPC');
+  ok(r.hasSofDpc && r.dpcOblig === r.exOblig && r.dpcDisb === r.exDisb && r.dpcCommit === r.commitRows && r.dpcOblig !== r.obligRows, 'DPC spending uses SOF actuals (join on) + commitment rows only; commitments-report obligation rows are not added');
   ok(r.notes.some(n => /obligation rows loaded/i.test(n)), 'drawer note counts obligation rows');
   ok(r.zeroRaw > 0 && r.zeroSkipped === r.zeroRaw && r.zeroLoaded === 0, 'zero-open FMZ3 rows excluded (' + r.zeroRaw + ')');
   ok(r.trav[0] === 'John Smith' && r.trav[1] === 'John Smith' && r.trav[2] === 'Maria Johnson' && r.dtsDesc.length, 'traveler cleanup ' + r.trav.join(' / '));
@@ -60,15 +68,25 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     const g = x => x.map(o => o.rows ? o : o).flat ? x : x;
     const f1 = (Array.isArray(a1) ? a1 : a1.results || [a1]).find(z => z.kind === 'fundkey' || (z.report && z.report.kind === 'fundkey'));
     const f2 = (Array.isArray(a2) ? a2 : a2.results || [a2]).find(z => z.kind === 'fundkey' || (z.report && z.report.kind === 'fundkey'));
-    G3.state.pg = 'All'; const allU = G3.mods.ulo.rows().length, all131 = G3.mods.ulo.rows().filter(u => u.pg === '').length;
-    G3.state.pg = '10010'; const u10 = G3.mods.ulo.rows(), L10 = G3.lines(cur), F10 = G3.funding(cur); G3.state.pg = 'All';
+    G3.state.fund = 'All'; const allU = G3.mods.ulo.rows().length, all011 = G3.mods.ulo.rows().filter(u => u.fund === '206011').length;
+    G3.state.fund = '206010'; const u10 = G3.mods.ulo.rows(), L10 = G3.lines(cur), F10 = G3.funding(cur); G3.state.fund = 'All';
     const sch = d.dpcLines.filter(x => x.account === 'SCHOOLS'), schRaw = G3.data.sets.commit.rows.filter(x => /1B3PSCH/.test(x.fa));
+    const nf = G3.normFund, fr = G3.fundFromRaw, fa = G3.fundFromAcct;
     return {
       pg: [t('100101B3PRAT'), t('131G48ASDF'), t('100701B3PIDT'), t(''), t('1234X')],
+      nf: [nf('206010D27'), nf('206011d27'), nf(' 206510 D27 '), nf('206511D27'), fr('2027OMNG'), fr('2060')],
+      fa: [fa('IDT'), fa('OSS OPS/TRAINING'), fa('ANTITERRORISM'), fa('ADOS'), fa('trauma training 2065'), fa('SCHOOLS')],
+      funds: (G3.FUNDS || []).join(','),
+      exp010: d.lines.filter(l => l.src === 'export' && l.fund === '206010').length,
+      exp011: d.lines.filter(l => l.src === 'export' && l.fund === '206011').length,
+      exp510: d.lines.filter(l => l.src === 'export' && l.fund === '206510').length,
+      exp511: d.lines.filter(l => l.src === 'export' && l.fund === '206511').length,
+      ulo010: d.ulo.filter(u => u.fund === '206010').length, ulo011: d.ulo.filter(u => u.fund === '206011').length,
+      allU, all011, u10n: u10.length, u10bad: u10.filter(u => u.fund !== '206010').length,
+      L10bad: L10.filter(l => l.fund !== '206010').length, L10n: L10.length,
+      fundMap: d.funding.filter(f => f.fy === cur).map(f => f.account + '=' + (f.fund || '')).join(' '), F10: F10.map(f => f.account).sort().join(','),
+      unk: (d.fundUnknownAccounts || []).map(x => x.name).join(','), odd: (d.sofOddFunds || []).map(o => o.fund).join(','),
       expPg: d.lines.filter(l => l.src === 'export' && l.pg).length, exp131: d.lines.filter(l => l.src === 'export' && l.pg === '').length,
-      uloPg: d.ulo.filter(u => u.pg).length, ulo131: d.ulo.filter(u => u.pg === '').length, allU, all131, u10n: u10.length, u10bad: u10.filter(u => u.pg !== '10010').length,
-      L10bad: L10.filter(l => l.pg !== '10010').length, L10n: L10.length,
-      fundPg: d.funding.filter(f => f.fy === cur).map(f => f.account + '=' + f.pg).join(' '), F10: F10.map(f => f.account).join(','),
       schBlankCol: schRaw.length && schRaw.every(x => x.pg === x.fa.slice(0, 5)),
       a1: f1 ? (f1.report || f1).hasAllot : 'nf', a1v: f1 ? (f1.rows || [])[0] && f1.rows[0].allot : null, a2: f2 ? (f2.rows || [])[0] && f2.rows[0].allot : null, a2note: f2 ? JSON.stringify((f2.report || {}).notes) : '',
       hasAllot: d.hasAllot, allotTot: Math.round(G3.sum(d.funding.filter(f => f.fy === cur), 'allot')),
@@ -76,26 +94,34 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     };
   });
   console.log(JSON.stringify(q, null, 1));
-  ok(q.pg.join() === '10010,,10070,,', 'pay group from Functional Area: 100101B3PRAT->10010, 131G48ASDF->none');
-  ok(q.expPg > 0 && q.exp131 > 0 && q.uloPg > 0 && q.ulo131 > 0, 'export + FMZ3 rows get pay groups; 131G rows get none');
-  ok(q.all131 > 0 && q.u10n > 0 && q.u10bad === 0 && q.L10bad === 0, 'pay group filter: 131G rows only under All; 10010 filter keeps only 10010 lines (Unliquidated too)');
-  ok(q.fundPg === 'IDT=10010 AT=10070 SCHOOLS=10080 OSS OPS/TRAINING=10080 ADOS= TRAINING SUPPORT=10090' && q.F10 === 'IDT', 'funding pay group per account from its Functional Areas (' + q.fundPg + ')');
+  ok(q.pg.join() === '10010,,10070,,', 'pay group from Functional Area still coded: 100101B3PRAT->10010, 131G48ASDF->none (filter is off)');
+  ok(q.nf.join() === '206010,206011,206510,206511,,' && q.funds === '206010,206011,206510', 'fund strips D27 / non-numeric suffix; 206511 is recognized but is not a filter option');
+  ok(q.fa.join() === '206010,206011,206510,,206510,206010', 'fund from account map: IDT/SCHOOLS=206010, OSS OPS/TRAINING=206011, ANTITERRORISM=206510, ADOS not on the map');
+  ok(q.exp010 > 0 && q.exp011 > 0 && q.exp510 > 0 && q.exp511 > 0 && q.ulo010 > 0 && q.ulo011 > 0, 'SOF rows carry 206010/206011/206510/206511; FMZ3 rows get a fund from their account when the report Fund is not a SOF fund');
+  ok(q.all011 > 0 && q.u10n > 0 && q.u10bad === 0 && q.L10bad === 0, 'fund filter 206010 keeps only 206010 lines (Unliquidated too)');
+  ok(q.fundMap === 'IDT=206010 AT=206010 SCHOOLS=206010 OSS OPS/TRAINING=206011 ADOS= TRAINING SUPPORT=206010 ANTITERRORISM=206510' && /ADOS/.test(q.F10) === false && /IDT/.test(q.F10) && /ANTITERRORISM/.test(q.F10) === false, 'funding per fund is the sum of mapped accounts (' + q.fundMap + ')');
+  ok(/ADOS/.test(q.unk) && /206511/.test(q.odd), 'Data details will list ADOS as not on the fund map and 206511 as an out-of-range SOF fund');
   const h = await p.evaluate(() => {
     const cur = G3.fyOf(G3.asOf()), out = {};
-    G3.state.pg = 'All'; const all = G3.totals(G3.lines(cur), G3.funding(cur));
-    let sum = 0;
-    G3.PAYGROUPS.concat(['']).forEach(pg => { G3.state.pg = 'All'; const f = G3.funding(cur, x => x.pg === pg), l = G3.lines(cur, x => x.pg === pg); sum += G3.sum(f, 'tdp'); });
-    G3.state.pg = '10080'; const T = G3.totals(G3.lines(cur), G3.funding(cur));
-    const exp8 = G3.data.funding.filter(f => f.fy === cur && (f.account === 'SCHOOLS' || f.account === 'OSS OPS/TRAINING')).reduce((a, f) => a + f.tdp, 0);
-    const ex8 = G3.data.lines.filter(l => l.fy === cur && l.pg === '10080').reduce((a, l) => a + l.commit + l.oblig + l.disb, 0);
+    G3.state.fund = 'All'; const all = G3.totals(G3.lines(cur), G3.funding(cur));
+    let sum = 0, unmappedTdp = 0;
+    (G3.FUNDS || []).forEach(fd => { sum += G3.sum(G3.data.funding.filter(x => x.fy === cur && x.fund === fd), 'tdp'); });
+    unmappedTdp = G3.sum(G3.data.funding.filter(x => x.fy === cur && !x.fund), 'tdp');
+    G3.state.fund = '206011'; G3.refresh(); const T = G3.totals(G3.lines(cur), G3.funding(cur));
+    const exp11 = G3.data.funding.filter(f => f.fy === cur && f.fund === '206011').reduce((a, f) => a + f.tdp, 0);
+    const ex11 = G3.data.lines.filter(l => l.fy === cur && l.fund === '206011').reduce((a, l) => a + l.commit + l.oblig + l.disb, 0);
     location.hash = '#/sof'; G3.refresh(); const kpi = document.querySelector('#page-sof .kpi .val').textContent;
-    G3.state.pg = 'All'; G3.refresh(); const dtext = (G3.renderDrawer(), document.getElementById('dUnmapped').textContent);
-    return { allTdp: all.tdp, sumByPg: sum, lvl: T.level, exp8, bal: Math.round(T.bal), expBal: Math.round(exp8 - ex8), kpi, money: G3.money(exp8), conflict: /Key conflicts:.*OSS OPS\/TRAINING.*counted under 10080/.test(dtext) };
+    const segs = [...document.querySelectorAll('#page-sof [data-seg="fund"] button')].map(b => b.getAttribute('data-v')).join(',');
+    G3.state.fund = 'All'; G3.refresh(); const dtext = (G3.renderDrawer(), document.getElementById('dUnmapped').textContent);
+    return { allTdp: all.tdp, sumByFund: sum, unmappedTdp, lvl: T.level, exp11, bal: Math.round(T.bal), expBal: Math.round(exp11 - ex11), kpi, money: G3.money(exp11), segs,
+      unk: /Master-key accounts not on the fund map/i.test(dtext) && /ADOS/.test(dtext),
+      odd: /SOF fund values outside/.test(dtext) && /206511/.test(dtext),
+      no511: !/206511/.test(segs), off: /pay group filter is turned off/i.test(dtext) && /Fund 206010/.test(dtext) };
   });
   console.log(JSON.stringify(h));
-  ok(Math.round(h.allTdp) === Math.round(h.sumByPg), 'TDP by pay group (incl. no pay group) adds back to the All total');
-  ok(h.lvl === h.exp8 && h.bal === h.expBal && h.kpi === h.money, 'pay group 10080: TDP = SCHOOLS + OSS OPS/TRAINING, balance = TDP - 10080 execution, card shows it (' + h.kpi + ')');
-  ok(h.conflict, 'account with Functional Areas in two pay groups listed as a key conflict');
+  ok(Math.round(h.allTdp) === Math.round(h.sumByFund + h.unmappedTdp), 'TDP of 206010 + 206011 + 206510 plus unmapped-account funding (ADOS) adds back to the All total');
+  ok(h.lvl === h.exp11 && h.bal === h.expBal && h.kpi === h.money, 'fund 206011: TDP = OSS OPS/TRAINING, balance = TDP - 206011 execution, card shows it (' + h.kpi + ')');
+  ok(h.unk && h.odd && h.off && h.no511 && h.segs === 'All,206010,206011,206510', 'Data details lists ADOS and SOF fund 206511; filter options are exactly 206010, 206011, 206510 (no 206511); pay group filter noted as off');
   const ci = await p.evaluate(() => ({ key: G3.data.sets.cikey && G3.data.sets.cikey.rows.length, kind: G3.parseWorkbook('x.xlsx', [{ name: 'S', aoa: [['Commitment Item', 'Description'], ['21TD', 'DTS travel']] }])[0].kind, name: G3.ciName('21TD'), unm: Object.keys(G3.data.unmapped.ci), html: (location.hash = '#/ulo', G3.refresh(), document.querySelector('#page-ulo td.cic').innerHTML), opt: document.querySelector('#page-ulo select[data-ui="ci"]').textContent }));
   console.log(JSON.stringify(ci));
   ok(ci.key === 9 && ci.kind === 'cikey' && ci.name === 'DTS travel (TDY)', 'Commitment Item tab detected by headers and loaded');
@@ -150,11 +176,11 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(pc.obl.length && pc.obl.every(x => x.amt > 0) && pc.r === 'commit:100,commit:-20,oblig:300,oblig:50', 'spending by DPC: obligations positive; sign set per entry type (negative or positive source) -> ' + pc.r);
   ok(pc.heads.indexOf('Account') < 0 && !pc.acctSel, 'Unliquidated has no Account column or filter (' + pc.heads.join(', ') + ')');
   // ---- realistic (messy) export + key: actuals populate under All and per pay group ----
-  const clean = await p3.evaluate(() => { const fy = '2027'; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.pg = '10010'; const T1 = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.pg = 'All';
+  const clean = await p3.evaluate(() => { const fy = '2027'; G3.state.fund = 'All'; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.fund = '206010'; const T1 = G3.totals(G3.lines(fy, l => l.src === 'export'), G3.funding(fy)); G3.state.fund = 'All'; G3.state.pg = 'All';
     return { od: Math.round(T.od), tdp: T.tdp, od10: Math.round(T1.od), tdp10: T1.tdp, idt: Math.round(G3.programCalc('idt', fy).spent), rows: G3.data.sets.export.rows.length }; });
   const real = [path.join(__dirname, 'samples', 'realistic', 'G3 Master Key (realistic).xlsx'), path.join(__dirname, 'samples', 'realistic', 'Status of Funds export (realistic).xlsx')];
   await p3.setInputFiles('#fileInput', real); await p3.waitForFunction(() => G3.data.source === 'file', null, { timeout: 15000 }); await p3.waitForTimeout(800);
-  const m = await p3.evaluate(() => { const fy = G3.state.fy; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.pg = '10010'; const T1 = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.pg = 'All';
+  const m = await p3.evaluate(() => { const fy = G3.state.fy; G3.state.fund = 'All'; G3.state.pg = 'All'; const T = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.fund = '206010'; const T1 = G3.totals(G3.lines(fy), G3.funding(fy)); G3.state.fund = 'All'; G3.state.pg = 'All';
     location.hash = '#/spend'; G3.refresh(); const sp = G3.mods.spend.calc ? null : null;
     location.hash = '#/sof'; G3.refresh(); const kOb = document.querySelector('#page-sof .kpi.obl .val').textContent;
     G3.renderDrawer(); const dr = document.getElementById('tFiles').textContent;
@@ -163,13 +189,13 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   console.log(JSON.stringify({ clean, m: Object.assign({}, m, { notes: undefined }) }));
   ok(m.kinds.indexOf('export') >= 0 && m.kinds.indexOf('acctkey') >= 0 && m.rows === clean.rows && m.unm === 0, 'realistic export (title row, header variants, text amounts, FY27/P02, messy FAs and account names) loads all ' + m.rows + ' rows, $0 unmapped');
   ok(m.od === clean.od && m.od > 0 && m.tdp === clean.tdp && m.kOb !== '$0', 'realistic export: actuals under All match the clean export (' + m.od + ')');
-  ok(m.od10 === clean.od10 && m.od10 > 0 && m.tdp10 === clean.tdp10 && m.idt === clean.idt && m.idt > 0, 'realistic export: pay group 10010 and the IDT tab populate (' + m.od10 + ', IDT ' + m.idt + ')');
+  ok(m.od10 === clean.od10 && m.od10 > 0 && m.tdp10 === clean.tdp10 && m.idt === clean.idt && m.idt > 0, 'realistic export: fund 206010 and the IDT tab populate (' + m.od10 + ', IDT ' + m.idt + ')');
   ok(m.dr, 'data panel shows $ loaded / $ unmapped per dataset');
   // ---- Cole's full GFEBS export header (Aviation/G1 column rules) + Spend Plans ----
   const p4 = await ctx.newPage(); p4.on('pageerror', e => errs.push(e.message));
   await p4.goto('file://' + __dirname + '/g3-dashboard.html#/spend'); await p4.waitForTimeout(600);
-  const sfp = async pg => pg.evaluate(() => { const fy = G3.state.fy; G3.state.pg = 'All'; const sp = G3.mods.spend.calc(fy, ''); const T = G3.totals(G3.lines(fy), G3.funding(fy));
-    G3.state.pg = '10010'; const sp10 = G3.mods.spend.calc(fy, ''); G3.state.pg = 'All';
+  const sfp = async pg => pg.evaluate(() => { const fy = G3.state.fy; G3.state.fund = 'All'; G3.state.pg = 'All'; const sp = G3.mods.spend.calc(fy, ''); const T = G3.totals(G3.lines(fy), G3.funding(fy));
+    G3.state.fund = '206010'; const sp10 = G3.mods.spend.calc(fy, ''); G3.state.fund = 'All'; G3.state.pg = 'All';
     const prog = ['idt', 'at', 'sch', 'mob'].map(k => Math.round(G3.programCalc(k, fy).spent) + '/' + Math.round(G3.programCalc(k, fy).planTD));
     return { fy, cur: sp.cur, pTD: Math.round(sp.tot.pTD), aTD: Math.round(sp.tot.aTD), fyPlan: Math.round(sp.tot.fyPlan), aTD10: Math.round(sp10.tot.aTD), od: Math.round(T.od), tdp: T.tdp, prog: prog.join(' '),
       acts: sp.accts.filter(r => r.aTD > 0 && r.pTD > 0).length, ulo: G3.data.ulo.length }; });
@@ -181,9 +207,9 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const gx = await p4.evaluate(() => { const r = G3.data.sets.export.report; location.hash = '#/spend'; G3.refresh(); const k = [...document.querySelectorAll('#page-spend .kpi .val')].map(x => x.textContent);
     return { notes: r.notes, ign: r.ignoredCols, rows: G3.data.sets.export.rows.length, unm: G3.data.diag.export.unmapped, noMonth: G3.data.diag.export.noMonth, kpis: k, sets: Object.keys(G3.data.sets).length }; });
   console.log(JSON.stringify({ F0, F1, gx }, null, 1));
-  ok(gx.rows === 637 && gx.unm === 0 && gx.noMonth === 0 && /"fiscal_month"/.test(gx.notes.join(' ')) && /"commitment_amt_cum"/.test(gx.notes.join(' ')) && /unit_identification_code/.test(gx.notes.join(' ')) && !/organizational_unique_identifier/.test(gx.notes.join(' ')), "Cole's full GFEBS header (111 columns): reads Aviation/G1 columns plus unit_identification_code_|_uic (not OUID); ignores " + gx.ign + ' others; 637 rows, $0 unmapped, every line has a month');
+  ok(gx.rows === 637 && gx.unm === 0 && gx.noMonth === 0 && /"fiscal_month"/.test(gx.notes.join(' ')) && /"commitment_amt_cum"/.test(gx.notes.join(' ')) && /unit_identification_code/.test(gx.notes.join(' ')) && /fund_fonds/.test(gx.notes.join(' ')) && !/organizational_unique_identifier/.test(gx.notes.join(' ')), "Cole's full GFEBS header (111 columns): reads Aviation/G1 columns plus UIC and fund_fonds (not OUID); ignores " + gx.ign + ' others; 637 rows, $0 unmapped, every line has a month');
   ok(F1.od === F0.od && F1.tdp === F0.tdp && F1.prog === F0.prog && F1.ulo === F0.ulo && gx.sets === 11, 'GFEBS export: Status of Funds, program tabs and Unliquidated match the test data (look-alike columns fiscal_period / obligation_amt_cum / fiscal_year_gjahr not read)');
-  ok(F1.pTD === F0.pTD && F1.aTD === F0.aTD && F1.pTD > 0 && F1.aTD > 0 && F1.aTD10 > 0 && F1.acts >= 4 && gx.kpis.every(v => v !== '$0'), 'Spend Plans populate from the GFEBS export: planned to date ' + F1.pTD + ', actual ' + F1.aTD + ' through month ' + F1.cur + ' (10010 actual ' + F1.aTD10 + ')');
+  ok(F1.pTD === F0.pTD && F1.aTD === F0.aTD && F1.pTD > 0 && F1.aTD > 0 && F1.aTD10 > 0 && F1.acts >= 4 && gx.kpis.every(v => v !== '$0'), 'Spend Plans populate from the GFEBS export: planned to date ' + F1.pTD + ', actual ' + F1.aTD + ' through month ' + F1.cur + ' (206010 actual ' + F1.aTD10 + ')');
   // Aviation/G1 spend plan layout (Account + date month headers) also loads
   await p4.setInputFiles('#fileInput', [path.join(gdir, 'Spend plan (Account layout).xlsx')]); await p4.waitForTimeout(1200);
   const F2 = await sfp(p4), pr = await p4.evaluate(() => G3.data.sets.plan.report);
@@ -276,6 +302,70 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(ur.kidsOk && ur.hasAM && ur.has133 && Math.abs(ur.treeSum - ur.exSum) < 0.05 && ur.exSum > 0, 'Unit rollups add up: children + own = parent, and all MSCs + unmapped = export obligations + disbursements (' + ur.treeSum + ')');
   ok(ur.unN > 0 && ur.hasUnTable && ur.unAmt > 0, 'Unmapped UIC W9UNKN is grouped and listed in Data details with dollars ($' + ur.unAmt + ', ' + ur.unN + ' rows)');
   ok(ur.commitNoUic && ur.filterAM && ur.panel, 'Commitments report (no UIC) is noted and left out of Spending by Unit; MSC filter narrows the tree to 2-34 IBCT; the SOF section is on the page');
+
+  // ---- FMZ3 Order join, unit tree (MSC > unit > company), state roots, excluded DPC ----
+  const jn = await pU.evaluate(() => {
+    const fy = G3.state.fy;
+    const ex = G3.data.lines.filter(l => l.src === 'export' && l.fy === fy);
+    const od = l => (l.oblig || 0) + (l.disb || 0);
+    const beforeOd = Math.round(ex.reduce((s, l) => s + od(l), 0) * 100) / 100;
+    const T = G3.totals(G3.lines(fy), G3.funding(fy));
+    const join = G3.data.sofJoin || {};
+    const dps = G3.dpcRollup(fy);
+    const sumO = G3.sum(dps, 'oblig'), sumD = G3.sum(dps, 'disb'), sumC = G3.sum(dps, 'commit');
+    const exO = G3.sum(ex, 'oblig'), exD = G3.sum(ex, 'disb');
+    const cmC = G3.sum(G3.data.dpcLines.filter(x => x.type === 'commit'), 'amt');
+    const cmO = G3.sum(G3.data.dpcLines.filter(x => x.type === 'oblig'), 'amt');
+    const tree = G3.unitRollup(fy);
+    const state = tree.find(n => n.id === '__state__' || n.level === 'State');
+    const msc = tree.find(n => n.uic === 'W8AMAA');
+    const bn = msc && msc.kids.find(n => n.uic === 'W8AQAA');
+    const co = bn && bn.kids.find(n => n.uic === 'W8AQ0B' || (n.kids && n.kids.length));
+    const hasCo = !!(bn && bn.kids && bn.kids.some(k => k.level === 'UIC'));
+    const hasHq = !!(bn && bn._own && bn._own.total);
+    const hasDpc = !!(bn && bn.kids && bn.kids.some(k => k.dpcs && k.dpcs.length));
+    const stUic = (G3.data.lines.filter(l => l.src === 'export' && (l.uicKey === 'W8AAAA' || G3.util.uk(l.uic) === 'W8AAAA')));
+    const unmappedHasState = (G3.data.topUnmappedUic || []).some(u => /W8AAAA/i.test(u.uic));
+    G3.renderDrawer();
+    const um = ((document.getElementById('dUnmapped') || {}).textContent || '') + ' ' + ((document.getElementById('tFiles') || {}).textContent || '');
+    const panel = !!document.getElementById('unitPanel'), xd = !!document.getElementById('uicDpcPanel');
+    const dpcSel = !!document.querySelector('#page-sof select[data-st="order"]');
+    const expBtn = !!document.getElementById('unitExpand');
+    const ng = (G3.data.unmapped.dpc || {});
+    const commitHasExcl = (G3.data.sets.commit.rows || []).some(r => G3.excludedDpc(r.dpc));
+    const uloHasExcl = (G3.data.ulo || []).some(u => /NGDFHDOU/i.test(u.order || '') || /NGDFHDOU/i.test(u.orderRaw || ''));
+    const uloLabel = (G3.data.ulo || []).filter(u => u.orderExcluded).length;
+    return {
+      beforeOd, execOd: Math.round(T.od * 100) / 100, joinMatched: join.matched, joinUnmatched: join.unmatched,
+      matchRate: join.matchRate, lineRate: join.lineRate, conflicts: join.conflictDocs || 0, base: (join.how && join.how.base) || 0, exact: (join.how && join.how.exact) || 0,
+      excluded: join.excluded || 0, excludedAmt: join.excludedAmt || 0,
+      sumO, sumD, sumC, exO, exD, cmC, cmO,
+      hasState: !!state, stateKids: state ? state.kids.length : 0, stateTotal: state ? state.total : 0,
+      stN: stUic.length, stAmt: stUic.reduce((s, l) => s + od(l), 0), unmappedHasState,
+      hasAM: !!msc, has133: !!bn, hasCo, hasHq, hasDpc,
+      levels: (tree[0] && tree[0].kids && tree[0].kids[0] && tree[0].kids[0].kids) ? 3 : 0,
+      panel, xd, dpcSel, expBtn,
+      umJoin: /SOF .* FMZ3 Order join/i.test(um) || /Earmarked Funds = contract_doc_no/i.test(um),
+      umState: /State \/ JFHQ/i.test(um) || /state-level root/i.test(um),
+      umExcl: /Excluded DPCs/i.test(um) && /NGDFHDOU/i.test(um),
+      ngInUnmapped: !!ng.NGDFHDOU,
+      commitHasExcl, uloLabel,
+      dpcNames: dps.map(d => d.name).join('|'),
+      totalsUnchanged: Math.abs(beforeOd - T.od) < 0.05,
+      fmzRows: G3.data.sets.fmz3.rows.length, uloN: G3.data.ulo.length
+    };
+  });
+  console.log(JSON.stringify(jn, null, 1));
+  ok(jn.joinMatched > 0 && jn.matchRate > 0.5 && jn.base > 0, 'SOF x FMZ3 join matches most dollars (rate ' + Math.round((jn.matchRate || 0) * 100) + '%, exact ' + jn.exact + ', base/suffix ' + jn.base + ', unmatched ' + jn.joinUnmatched + ')');
+  ok(Math.abs(jn.sumO - jn.exO) < 0.05 && Math.abs(jn.sumD - jn.exD) < 0.05 && jn.totalsUnchanged, 'join does not change execution totals; DPC actuals add back to SOF obligations + disbursements');
+  ok(Math.abs(jn.sumC - jn.cmC) < 0.05 && Math.abs(jn.sumO - jn.cmO) > 1, 'DPC commitments come from the commitments report; SOF actuals replace obligation entries (no double count)');
+  ok(jn.conflicts > 0 && jn.umJoin, 'multi-Order earmarked documents are split by Amount Total share and listed in Data details (' + jn.conflicts + ')');
+  ok(jn.joinUnmatched > 0, 'unmatched SOF docs go to No order (no FMZ3 match) with dollars in Data details');
+  ok(jn.hasAM && jn.has133 && jn.hasCo && jn.levels >= 3, 'Spending by Unit tree is 3 levels: MSC expands to battalions/units, units expand to companies');
+  ok(jn.hasState && jn.stateKids > 0 && jn.stN > 0 && !jn.unmappedHasState && jn.umState, 'State-level root UIC W8AAAA is under State / JFHQ (root), not Unmapped UIC (' + jn.stN + ' SOF rows, $' + Math.round(jn.stAmt) + ')');
+  ok(jn.hasDpc && jn.panel && jn.xd && jn.dpcSel && jn.expBtn, 'Company -> DPC drill, DPC/order filter, Company x DPC table, and Expand all are on the page');
+  ok(!jn.ngInUnmapped && !jn.commitHasExcl && jn.umExcl && (jn.excluded > 0 || jn.uloLabel >= 0), 'NGDFHDOU is excluded from commitments and unmapped DPC list; SOF dollars on that Order are kept as No order (excluded DPC)');
+  ok(jn.fmzRows > jn.uloN, 'zero-open FMZ3 rows are kept for the Order lookup but left out of Unliquidated (' + jn.uloN + ' open / ' + jn.fmzRows + ' loaded)');
 
   // ---- Status of Funds accounts table fits without a horizontal scroll bar at 1920 and 1600 ----
   const fit = [];

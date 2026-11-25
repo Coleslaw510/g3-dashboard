@@ -22,8 +22,8 @@
     var R = M.calc(fy, ui.acct), cur = R.cur, tot = R.tot, off = R.accts.filter(function (r) { return G3.varClass(r.v) !== "g" && r.v != null; });
     var vk = G3.varClass(tot.v), stc = { g: "#16a34a", y: "#eab308", r: "#dc2626", na: "#94a3b8" };
     var h = G3.head("plan", "i-plan", "Spend Plans", G3.scope((ui.acct ? G3.esc(G3.acct(ui.acct).name) : "All accounts") + " &middot; actuals through " + (cur ? G3.MONTHS[cur - 1] + " (month " + cur + ")" : "\u2014")));
-    h += '<div class="filters">' + G3.fySel() + '<label class="grow">Account<select data-ui="acct"><option value="">All accounts</option>' + G3.data.accounts.map(function (a) { return '<option value="' + a.id + '"' + (a.id === ui.acct ? " selected" : "") + ">" + G3.esc(a.name) + "</option>"; }).join("") + "</select></label>" + G3.pgSeg() +
-      '<div class="segwrap"><span class="seglbl">View</span>' + G3.seg("mode", [["monthly", "Monthly"], ["cumulative", "Cumulative"]], ui.mode) + '</div><button class="btn" type="button" id="spReset">Reset</button></div>' + G3.pgNote();
+    h += '<div class="filters">' + G3.fySel() + '<label class="grow">Account<select data-ui="acct"><option value="">All accounts</option>' + G3.data.accounts.map(function (a) { return '<option value="' + a.id + '"' + (a.id === ui.acct ? " selected" : "") + ">" + G3.esc(a.name) + "</option>"; }).join("") + "</select></label>" + G3.filterSeg() +
+      '<div class="segwrap"><span class="seglbl">View</span>' + G3.seg("mode", [["monthly", "Monthly"], ["cumulative", "Cumulative"]], ui.mode) + '</div><button class="btn" type="button" id="spReset">Reset</button></div>' + G3.filterNote();
     h += '<div class="kpis k4">' +
       G3.kpi("", "Planned to date", G3.money(tot.pTD), (cur ? "Oct\u2013" + G3.MONTHS[cur - 1] + (R.frac < 1 ? " (" + G3.MONTHS[cur - 1] + " prorated)" : "") : "No actuals") + " &middot; year plan " + G3.money(tot.fyPlan), ' style="--st:#94a3b8"') +
       G3.kpi("", "Actual to date", G3.money(tot.aTD), "Obligations + disbursements", ' style="--st:#2563eb"') +
@@ -47,7 +47,7 @@
       "</tbody><tfoot>" + rowH("<strong>" + (ui.acct ? "Selected" : "All accounts") + "</strong>", tot) + "</tfoot></table></div></div>";
     root.innerHTML = h;
     G3.bindCommon(root, M);
-    G3.$("spReset").onclick = function () { ui.acct = ""; ui.mode = "monthly"; G3.state.pg = "All"; G3.refresh(); };
+    G3.$("spReset").onclick = function () { ui.acct = ""; ui.mode = "monthly"; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
     root.querySelectorAll("[data-acct]").forEach(function (b) { b.onclick = function () { var k = b.getAttribute("data-acct"); ui.acct = ui.acct === k ? "" : k; M.render(); }; });
     var pAdj = tot.p.map(function (v, i) { return i === cur - 1 ? v * R.frac : v; }), cumu = ui.mode === "cumulative", P = cumu ? G3.cum(pAdj) : pAdj, A = cumu ? G3.cum(tot.act) : tot.act;
     var Aplot = A.map(function (v, i) { return i < cur ? v : null; });
