@@ -54,13 +54,68 @@
           '</tbody><tfoot><tr><td>Program total</td><td class="num">' + R.dps.length + '</td><td class="num">' + G3.whole(hasJoin ? G3.sum(R.dps, "oblig") + G3.sum(R.dps, "disb") : G3.sum(R.dps, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(R.dps, "commit")) + '</td><td class="num">' + G3.whole(R.dpcTotal) + '</td><td class="num">100%</td><td class="num">' + G3.money(G3.sum(R.dps, "ulo")) + "</td></tr></tfoot></table></div></div>";
       }
       h += "</div>";
-      // Spending by MSC (from the funds export UIC + Units tab)
-      var mscR = (G3.data.hasUnits ? G3.unitRollup(fy, function (x) { return R.accts.indexOf(x.account) >= 0; }) : []).filter(function (o) { return o.total; }), mscT = G3.sum(mscR, "total");
-      if (mscR.length) {
-        h += '<div class="panel"><div class="tablehead"><h2>Spending by MSC</h2><span class="muted small">Obligations + disbursements from the funds export, rolled up from UIC through the unit hierarchy</span></div>' +
-          '<div class="tablewrap"><table class="grid unit"><thead><tr><th>MSC</th><th class="num">Obligations</th><th class="num">Disbursements</th><th class="num">Total</th><th class="num">Share</th></tr></thead><tbody>' +
-          mscR.map(function (o) { var sh = mscT ? o.total / mscT : 0; return "<tr><td><strong>" + G3.esc(o.name) + "</strong>" + (o.uic ? ' <span class="uic">' + G3.esc(o.uic) + "</span>" : "") + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + '</td><td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + "%;background:" + c.color + '"></i></span>' + G3.pct(sh, 0) + "</td></tr>"; }).join("") +
-          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(G3.sum(mscR, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(mscR, "disb")) + '</td><td class="num">' + G3.whole(mscT) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
+      // Unit spending by DPC: MSC > Battalion/Unit > Company, then TDC > DPC (SOF actuals + FMZ3 Order)
+      var utreeAll = G3.data.hasUnits ? G3.unitRollup(fy, function (x) { return R.accts.indexOf(x.account) >= 0; }, { withTdc: !!hasJoin }) : [];
+      (function sortU(nodes) {
+        var k = ui.unitSort || "total", dir = ui.unitAsc ? 1 : -1;
+        (nodes || []).sort(function (a, b) {
+          var av = k === "name" ? a.name : (a[k] || 0), bv = k === "name" ? b.name : (b[k] || 0);
+          return (typeof av === "string" ? av.localeCompare(bv) : (av - bv)) * dir;
+        });
+        (nodes || []).forEach(function (n) { sortU(n.kids); if (n.tdcs) n.tdcs.sort(function (a, b) { return ((b[k] || b.total) - (a[k] || a.total)) * (k === "name" ? -1 : dir); }); });
+      })(utreeAll);
+      var qUnit = (ui.unitQ || "").trim().toLowerCase();
+      function unitMatch(o) {
+        if (!qUnit) return true;
+        var blob = (o.name + " " + (o.uic || "") + " " + (o.code || "") + " " + (o.tdc || "")).toLowerCase();
+        if (blob.indexOf(qUnit) >= 0) return true;
+        if ((o.tdcs || []).some(function (t) {
+          if ((t.tdc || "").toLowerCase().indexOf(qUnit) >= 0) return true;
+          return (t.dpcs || []).some(function (d) { return (d.name + " " + (d.code || "")).toLowerCase().indexOf(qUnit) >= 0; });
+        })) return true;
+        return (o.kids || []).some(unitMatch);
+      }
+      function filterTree(nodes) {
+        if (!qUnit) return nodes || [];
+        return (nodes || []).filter(unitMatch).map(function (o) { var c = Object.assign({}, o); c.kids = filterTree(o.kids || []); return c; });
+      }
+      var utree = filterTree(utreeAll);
+      var uTotU = { oblig: G3.sum(utree, "oblig"), disb: G3.sum(utree, "disb"), total: G3.sum(utree, "total") };
+      if (ui.openUnit == null) { ui.openUnit = {}; utree.forEach(function (r) { if (r.id !== "__unmapped__" && r.id !== "__state__") ui.openUnit[r.id] = true; }); }
+      function uOpen(id) { return !!(ui.openUnit && ui.openUnit[id]); }
+      function lvlClass(o) { return o.level === "MSC" ? "lmsc" : o.level === "Battalion / Unit" ? "lbn" : o.level === "State" ? "lst" : o.level === "TDC" ? "ltdc" : o.level === "DPC" ? "ldpc" : o.id === "__unmapped__" ? "lunmap" : "lco"; }
+      function lvlBadge(o) { return o.level === "MSC" ? "MSC" : o.level === "Battalion / Unit" ? "Unit" : o.level === "State" ? "State" : o.level === "TDC" ? "TDC" : o.level === "DPC" ? "DPC" : o.id === "__unmapped__" ? "—" : "Co"; }
+      function unitRowHtml(o, depth, hasKids, open, sh, extraCls, badge, name, code) {
+        var caret = hasKids ? '<button class="caret" type="button" data-uopen="' + G3.esc(o.id) + '" aria-expanded="' + (open ? "true" : "false") + '" title="' + (open ? "Collapse" : "Expand") + '">' + (open ? "▾" : "▸") + "</button>" : '<span class="caret"></span>';
+        var codeHtml = code ? (o.level === "DPC" ? ' <span class="dpc">' + G3.esc(code) + "</span>" : ' <span class="uic">' + G3.esc(code) + "</span>") : "";
+        return '<tr class="urow l' + depth + " " + lvlClass(o) + (extraCls || "") + (open ? " open" : "") + '"><td class="un">' + caret + '<span class="lvg"></span><span class="lvlb">' + badge + "</span><span class=\"uname\">" + G3.esc(name) + "</span>" + codeHtml + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + "</td>" +
+          '<td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + '%"></i></span>' + G3.pct(sh, 0) + "</td></tr>";
+      }
+      function unitTdcRows(nodes, depth, out) {
+        (nodes || []).forEach(function (o) {
+          var tdcs = o.tdcs || [], hasKids = !!(o.kids && o.kids.length) || tdcs.length, open = hasKids && uOpen(o.id), sh = uTotU.total ? o.total / uTotU.total : 0;
+          out.push(unitRowHtml(o, depth, hasKids, open, sh, o.id === "__unmapped__" ? " unmap" : (o.id === "__state__" ? " state" : ""), lvlBadge(o), o.name, o.uic));
+          if (open) {
+            if (o.kids && o.kids.length) unitTdcRows(o.kids, depth + 1, out);
+            tdcs.forEach(function (t) {
+              var topen = uOpen(t.id), tsh = uTotU.total ? t.total / uTotU.total : 0, hasD = !!(t.dpcs && t.dpcs.length);
+              out.push(unitRowHtml(t, depth + 1, hasD, topen, tsh, "", "TDC", t.tdc, ""));
+              if (topen) (t.dpcs || []).forEach(function (d) {
+                out.push(unitRowHtml(d, depth + 2, false, false, uTotU.total ? d.total / uTotU.total : 0, " ldpc", "DPC", d.name, d.code));
+              });
+            });
+          }
+        });
+        return out;
+      }
+      if (utreeAll.length || (G3.data.hasUnits && hasJoin)) {
+        var uth = [["name", "Unit"], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"], ["total", "Total", "num"], ["share", "% of spending", "num"]];
+        h += '<div class="panel unitdpc" id="' + id + 'UnitDpc"><div class="tablehead"><h2>Unit spending by DPC</h2><span class="muted small">SOF obligations + disbursements with Order (DPC) from FMZ3, limited to this program. Expand a unit (MSC, battalion, or company) to see its TDCs, then each DPC by description.</span>' +
+          '<div class="unitacts"><button class="btn sm" type="button" id="' + id + 'UnitExpand">Expand all</button><button class="btn sm ghost" type="button" id="' + id + 'UnitCollapse">Collapse all</button></div></div>' +
+          '<div class="filters"><label class="ufl u-search grow">Search units or DPCs<input type="search" data-ui="unitQ" value="' + G3.esc(ui.unitQ || "") + '" placeholder="Unit, UIC, TDC, DPC"></label></div>';
+        h += '<div class="tablewrap"><table class="grid unit"><thead><tr>' + uth.map(function (col) { return '<th data-uk="' + col[0] + '" class="' + (col[2] || "") + (col[0] === (ui.unitSort || "total") ? " sorted" + (ui.unitAsc ? " asc" : "") : "") + '">' + col[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          (utree.length ? unitTdcRows(utree, 1, []).join("") : '<tr><td colspan="5" class="muted">' + (qUnit ? "No units or DPCs match that search." : "No UIC spending for this program yet.") + "</td></tr>") +
+          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(uTotU.oblig) + '</td><td class="num">' + G3.whole(uTotU.disb) + '</td><td class="num">' + G3.whole(uTotU.total) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
       }
       // DPC detail
       if (!noDpc && R.dps.length) {
@@ -76,10 +131,18 @@
         old.map(function (u) { return "<tr" + (u.days > 180 ? ' class="red"' : u.days > 90 ? ' class="amber"' : "") + '><td>' + G3.ciPill(u.type) + '</td><td class="wrapc">' + G3.esc(u.desc) + '</td><td class="wrapc small">' + G3.esc(G3.dpcName(u.order) || u.order) + '</td><td class="num"><span class="agepill" style="--bc:' + G3.mods.ulo.BCOL[u.b] + '">' + u.days + 'd</span></td><td class="num"><strong>' + G3.whole(u.open) + "</strong></td></tr>"; }).join("") + (old.length ? "" : '<tr><td colspan="5" class="muted">Nothing open.</td></tr>') + "</tbody></table></div></div></div>";
       root.innerHTML = h;
       G3.bindCommon(root, M);
-      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
+      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; ui.openUnit = null; ui.unitQ = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
       root.querySelectorAll("tr.tdcr").forEach(function (tr) { tr.onclick = function () { var t = tr.getAttribute("data-tdc"); ui.tdc = ui.tdc === t ? "" : t; M.render(); }; });
       var all = G3.$(id + "AllTdc"); if (all) all.onclick = function () { ui.tdc = ""; M.render(); };
       G3.$(id + "Ulo").onclick = function () { G3.mods.ulo.ui.page = 0; G3.go("ulo"); };
+      function collectUnitIds(nodes, acc) {
+        (nodes || []).forEach(function (o) { acc.push(o.id); collectUnitIds(o.kids, acc); });
+        return acc;
+      }
+      var ux = G3.$(id + "UnitExpand"); if (ux) ux.onclick = function () { ui.openUnit = {}; collectUnitIds(utree, []).forEach(function (k) { ui.openUnit[k] = true; }); M.render(); };
+      var uc = G3.$(id + "UnitCollapse"); if (uc) uc.onclick = function () { ui.openUnit = {}; M.render(); };
+      root.querySelectorAll("#" + id + "UnitDpc [data-uopen]").forEach(function (b) { b.onclick = function () { ui.openUnit = ui.openUnit || {}; var k = b.getAttribute("data-uopen"); ui.openUnit[k] = !ui.openUnit[k]; M.render(); }; });
+      root.querySelectorAll("#" + id + "UnitDpc th[data-uk]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-uk"); if (kk === "share") kk = "total"; if (ui.unitSort === kk) ui.unitAsc = !ui.unitAsc; else { ui.unitSort = kk; ui.unitAsc = kk === "name"; } M.render(); }; });
       // charts
       if (!noDpc && R.tdcs.length) G3.chart("c" + id + "Tdc", { type: "bar", data: { labels: R.tdcs.map(function (t) { return t.tdc; }), datasets: [{ label: hasJoin ? "Actuals" : "Obligations", data: R.tdcs.map(function (t) { return hasJoin ? t.oblig + (t.disb || 0) : t.oblig; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length]; }), stack: "t", borderRadius: 4 }, { label: "Commitments", data: R.tdcs.map(function (t) { return t.commit; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length] + "66"; }), stack: "t", borderRadius: 4 }] },
         options: { indexAxis: "y", onClick: function (e, el2) { if (el2.length) { var t = R.tdcs[el2[0].index].tdc; ui.tdc = ui.tdc === t ? "" : t; M.render(); } }, scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } } }, plugins: { tooltip: G3.tipMoney, legend: { labels: { generateLabels: function () { return [{ text: (hasJoin ? "Actuals" : "Obligations") + " (solid)", fillStyle: "#64748b", strokeStyle: "#64748b", pointStyle: "circle" }, { text: "Commitments (light)", fillStyle: "#cbd5e1", strokeStyle: "#cbd5e1", pointStyle: "circle" }]; } } } } } });

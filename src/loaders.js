@@ -34,6 +34,9 @@
     "206011": ["OSS SCHOOLS", "OSS OPS/TRAINING"],
     "206510": ["ANTITERRORISM", "SECURITY", "TRAUMA TRAINING 2065"]
   };
+  // State-level / above-MSC roots that must never appear as MSC or parent nodes. UICs also listed under one of these
+  // (e.g. IA DIV) use their real MSC > Battalion > Company row instead.
+  G3.ROOT_UNITS = ["IA DIV", "IOWA DIV", "JFHQ-IA"];
   // ==================
 
   // ---------- helpers (Aviation funding.js) ----------
@@ -475,22 +478,38 @@
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
 
     // ---------- Units + Hierarchy Level (MSC > Battalion/Unit > subordinate UIC) ----------
-    function isStateLevel(s) {
-      var x = an(s);
-      return /^(STATE|STATEROOT|STATELEVEL|STATELEVELROOT|STATELVL|TAG|STARC|ROOT)$/.test(x) || /^(STATE)(LEVEL|ROOT|LVL|\s)/.test(x) || /STATELEVELROOT|STATE\s*LEVEL\s*ROOT/.test(x);
+    function compactName(v) { return an(v).replace(/[^A-Z0-9]/g, ""); }
+    G3.isRootName = function (v) {
+      var x = an(v), c = compactName(v);
+      if (!x && !c) return false;
+      var list = G3.ROOT_UNITS || [];
+      for (var i = 0; i < list.length; i++) {
+        var n = an(list[i]), cn = compactName(list[i]);
+        if (x === n || (c && cn && c === cn)) return true;
+      }
+      if (/^(IA|IOWA)DIV(ISION)?$/.test(c) || /^JFHQIA$/.test(c)) return true;
+      return false;
+    };
+    function isRootLevel(v) {
+      var x = an(v);
+      if (!x) return false;
+      if (/^(STATE|STATEROOT|STATELEVEL|STATELEVELROOT|STATELVL|TAG|STARC|ROOT|TOP|TOPLEVEL|TOPLVL)$/.test(x)) return true;
+      if (/^(STATE|TOP|DIVISION)(\s)?(LEVEL|ROOT|LVL)/.test(x) || /STATELEVELROOT|STATE\s*LEVEL\s*ROOT/.test(x)) return true;
+      if (/^(DIVISION|DIVISIONLEVEL|DIVLVL|ABOVEMSC)$/.test(x)) return true;
+      return false;
     }
-    function lvlCanon(s) {
-      var x = an(s);
+    function lvlCanon(v) {
+      var x = an(v);
       if (!x) return "";
-      if (isStateLevel(s)) return "State";
+      if (isRootLevel(v) || G3.isRootName(v)) return "State";
       if (/^MSC|MAJORSUBORDINATE/.test(x) || x === "MAJOR SUBORDINATE COMMAND") return "MSC";
       if (/BATTALION|\bBN\b|^UNIT$|BATTALIONUNIT|BATTALION\/UNIT/.test(x) || x === "BATTALION / UNIT") return "Battalion / Unit";
       if (/^(UIC|SUBORDINATE|SUBORDINATEUIC|COMPANY|BATTERY|TROOP|DETACHMENT|UNITIDENTIFICATION)/.test(x) || /SUBORDINATE\s*UIC/.test(x)) return "UIC";
-      return txt(s);
+      return txt(v);
     }
     var defLevels = G3.UNIT_LEVELS.slice(), levelOrder = [], levelSeen = {};
-    function addLevel(s, ord) {
-      var L = lvlCanon(s); if (!L) return;
+    function addLevel(v, ord) {
+      var L = lvlCanon(v); if (!L || L === "State") return;
       if (!levelSeen[L]) { levelSeen[L] = { name: L, ord: ord == null || ord === "" || isNaN(+ord) ? 1000 + levelOrder.length : +ord }; levelOrder.push(L); }
       else if (ord != null && ord !== "" && !isNaN(+ord) && +ord < levelSeen[L].ord) levelSeen[L].ord = +ord;
     }
@@ -498,37 +517,87 @@
     rows("unitkey").forEach(function (r) { if (r.level) addLevel(r.level, r.ord); });
     if (!levelOrder.length) levelOrder = defLevels.slice();
     else levelOrder.sort(function (a, b) { return levelSeen[a].ord - levelSeen[b].ord || defLevels.indexOf(a) - defLevels.indexOf(b); });
-    // Prefer the standard three names when the tab's labels fold onto them
     d.unitLevels = levelOrder;
-    var unitBy = {}, units = [];
-    function putUnit(r) {
-      var k = uk(r.uic); if (!k) return null;
-      if (unitBy[k]) return unitBy[k];
-      var u = { uic: k, raw: r.uic, name: r.name || r.uic, msc: r.msc || "", bn: r.bn || "", level: lvlCanon(r.level), parent: r.parent || "", kids: [] };
-      unitBy[k] = u; units.push(u); return u;
-    }
-    rows("unitkey").forEach(putUnit);
-    rows("hierkey").forEach(function (r) {
-      if (!r.uic) return;
-      var u = putUnit({ uic: r.uic, name: r.name || r.uic, msc: "", bn: "", level: r.level, parent: r.parent });
-      if (r.level) u.level = u.level || lvlCanon(r.level);
-      if (r.parent && !u.parent) u.parent = r.parent;
+
+    // Collect every Units / Hierarchy row. A UIC may appear under IA DIV (or another root) AND under a real
+    // MSC / battalion; we keep one placement — the deepest real MSC > Battalion > Company row.
+    var rawUnitRows = [];
+    rows("unitkey").forEach(function (r) { if (uk(r.uic)) rawUnitRows.push({ src: "unitkey", uic: r.uic, name: r.name, msc: r.msc, bn: r.bn, level: r.level, parent: r.parent }); });
+    rows("hierkey").forEach(function (r) { if (r.uic) rawUnitRows.push({ src: "hierkey", uic: r.uic, name: r.name || r.uic, msc: "", bn: "", level: r.level, parent: r.parent }); });
+    var rootKeys = {};
+    rawUnitRows.forEach(function (r) {
+      var k = uk(r.uic);
+      if (isRootLevel(r.level) || G3.isRootName(r.name) || G3.isRootName(r.uic)) rootKeys[k] = 1;
+      else if (G3.isRootName(r.msc) && uk(r.msc) === k) rootKeys[k] = 1;
     });
-    // If MSC / Battalion values are UICs, resolve to unit names. Also fill missing parent/level from the Units columns.
+    function isRootRef(v) { if (!v) return false; if (G3.isRootName(v)) return true; var k = uk(v); return !!(k && rootKeys[k]); }
+    function rowIsRootPlacement(r) {
+      // The root unit itself (IA DIV, state-level row). A real MSC whose parent is the state
+      // root is not a root placement — that is the normal tree. A company listed only under
+      // IA DIV, with no real MSC/battalion, is a root listing (so a duplicate under a real
+      // battalion can win).
+      if (isRootLevel(r.level) || G3.isRootName(r.name) || G3.isRootName(r.uic)) return true;
+      var k = uk(r.uic), lvl = lvlCanon(r.level);
+      if (lvl === "MSC") return false;
+      var realMsc = r.msc && !isRootRef(r.msc) && uk(r.msc) !== k;
+      var realBn = r.bn && !isRootRef(r.bn) && uk(r.bn) !== k;
+      var realPar = r.parent && !isRootRef(r.parent) && uk(r.parent) !== k && !rootKeys[uk(r.parent)];
+      if (realMsc || realBn || realPar) return false;
+      if (isRootRef(r.msc) || isRootRef(r.parent) || (r.parent && rootKeys[uk(r.parent)]) || (r.msc && rootKeys[uk(r.msc)])) return true;
+      return false;
+    }
+    function placementScore(r) {
+      if (rowIsRootPlacement(r)) return 0;
+      var lvl = lvlCanon(r.level), score = 1;
+      var k = uk(r.uic);
+      var bnOk = r.bn && !isRootRef(r.bn) && uk(r.bn) !== k;
+      var mscOk = r.msc && !isRootRef(r.msc) && uk(r.msc) !== k;
+      var parOk = r.parent && !isRootRef(r.parent) && uk(r.parent) !== k;
+      if (mscOk) score += 10;
+      if (bnOk) score += 20;
+      if (parOk) score += 4;
+      if (lvl === "UIC") score += 5;
+      else if (lvl === "Battalion / Unit") score += 3;
+      else if (lvl === "MSC") score += 2;
+      if (r.src === "unitkey") score += 1;
+      return score;
+    }
+    var grouped = {}, best = {};
+    rawUnitRows.forEach(function (r) {
+      var k = uk(r.uic); (grouped[k] = grouped[k] || []).push(r);
+      var sc = placementScore(r);
+      if (!best[k] || sc > best[k].score) best[k] = { row: r, score: sc };
+    });
+    var unitBy = {}, units = [];
+    Object.keys(best).forEach(function (k) {
+      var r = best[k].row, onlyRoot = best[k].score === 0;
+      var u = { uic: k, raw: r.uic, name: r.name || r.uic, msc: r.msc || "", bn: r.bn || "", level: onlyRoot ? "State" : lvlCanon(r.level), parent: r.parent || "", kids: [], stateRoot: onlyRoot };
+      unitBy[k] = u; units.push(u);
+    });
+    d.unitDupes = Object.keys(grouped).filter(function (k) { return grouped[k].length > 1; }).map(function (k) {
+      return { uic: k, name: (unitBy[k] && unitBy[k].name) || k, n: grouped[k].length, used: best[k] && best[k].score > 0 ? "real placement" : "root only" };
+    });
+
     function resolveRef(v) {
       if (!v) return { key: "", name: "", uic: "" };
+      if (isRootRef(v) && !unitBy[uk(v)]) return { key: "", name: txt(v), uic: "", root: true };
       var k = uk(v);
-      if (k && unitBy[k]) return { key: k, name: unitBy[k].name, uic: k };
+      if (k && unitBy[k]) return { key: k, name: unitBy[k].name, uic: k, root: !!unitBy[k].stateRoot };
       var nm = txt(v), hit = "";
       if (nm) units.forEach(function (u) { if (!hit && an(u.name) === an(nm)) hit = u.uic; });
-      if (hit) return { key: hit, name: unitBy[hit].name, uic: hit };
-      return { key: k || an(nm), name: nm || k, uic: k };
+      if (hit) return { key: hit, name: unitBy[hit].name, uic: hit, root: !!unitBy[hit].stateRoot };
+      return { key: k || an(nm), name: nm || k, uic: k, root: isRootRef(v) };
     }
     units.forEach(function (u) {
+      if (u.stateRoot) { u.parent = ""; u.msc = ""; u.bn = ""; u.level = "State"; return; }
       var m = resolveRef(u.msc), b = resolveRef(u.bn), p = resolveRef(u.parent);
-      u.msc = m.key; u.mscName = m.name || u.msc; u.bn = b.key; u.bnName = b.name || u.bn;
-      if (p.key) u.parent = p.key;
-      if (!u.level) {
+      u.msc = (m.root || (m.key && unitBy[m.key] && unitBy[m.key].stateRoot)) ? "" : m.key;
+      u.mscName = u.msc ? (m.name || u.msc) : "";
+      u.bn = (b.root || (b.key && unitBy[b.key] && unitBy[b.key].stateRoot) || (b.key && unitBy[b.key] && unitBy[b.key].level === "State")) ? "" : b.key;
+      u.bnName = u.bn ? (b.name || u.bn) : "";
+      if (p.key && !p.root && unitBy[p.key] && !unitBy[p.key].stateRoot) u.parent = p.key;
+      else u.parent = "";
+      if (!u.level || u.level === "State") {
         if (u.uic && u.msc && u.uic === u.msc && (!u.bn || u.uic === u.bn)) u.level = "MSC";
         else if (u.uic && u.bn && u.uic === u.bn) u.level = "Battalion / Unit";
         else if (u.msc && !u.bn && u.uic === u.msc) u.level = "MSC";
@@ -536,37 +605,17 @@
       }
       if (!u.parent) {
         if (u.level === "MSC") u.parent = "";
-        else if (u.level === "Battalion / Unit") u.parent = u.msc && u.msc !== u.uic ? u.msc : "";
-        else u.parent = (u.bn && u.bn !== u.uic ? u.bn : "") || (u.msc && u.msc !== u.uic ? u.msc : "");
+        else if (u.level === "Battalion / Unit") u.parent = (u.msc && u.msc !== u.uic && unitBy[u.msc] && unitBy[u.msc].level === "MSC") ? u.msc : "";
+        else u.parent = (u.bn && u.bn !== u.uic && unitBy[u.bn] && !unitBy[u.bn].stateRoot ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "");
+      } else if (unitBy[uk(u.parent)] && (unitBy[uk(u.parent)].stateRoot || unitBy[uk(u.parent)].level === "State")) {
+        u.parent = (u.level === "Battalion / Unit") ? (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "") : ((u.bn && unitBy[u.bn] && !unitBy[u.bn].stateRoot && u.bn !== u.uic ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : ""));
       }
-    });
-    // State-level root rows (Hierarchy Level = State / State Level Root / TAG / STARC, etc.)
-    // stay in the UIC lookup so SOF spending on those UICs is not unmapped, but they are
-    // not used as parents of MSCs and they are not MSC-tree roots.
-    units.forEach(function (u) {
-      if (u.level === "State") { u.stateRoot = true; u.parent = ""; return; }
-      var pU = u.parent ? unitBy[uk(u.parent)] : null;
-      if (pU && pU.level === "State") u.parent = "";
-      if (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "State") {
-        u.stateUic = u.msc;
-        if (u.level === "MSC") u.msc = u.uic;
-        else u.msc = "";
-      }
-    });
-    units.forEach(function (u) {
-      if (u.stateRoot) return;
-      if (!u.parent) {
-        if (u.level === "MSC") u.parent = "";
-        else if (u.level === "Battalion / Unit") u.parent = (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic) ? u.msc : "";
-        else u.parent = (u.bn && u.bn !== u.uic && unitBy[u.bn] ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "");
-      }
-      if (u.level !== "MSC" && u.parent && !unitBy[uk(u.parent)] && u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC") u.parent = u.msc;
     });
     d.stateRoots = units.filter(function (u) { return u.stateRoot; });
-    if (d.stateRoots.length && S.unitkey && S.unitkey.report) {
-      var note = d.stateRoots.length + " state-level root row" + (d.stateRoots.length > 1 ? "s" : "") + " left out of the MSC tree (spending on those UICs goes under State / JFHQ (root), not Unmapped UIC)";
-      S.unitkey.report.notes = (S.unitkey.report.notes || []).filter(function (n) { return String(n).indexOf("state-level root") < 0; });
-      S.unitkey.report.notes.push(note);
+    if (S.unitkey && S.unitkey.report) {
+      S.unitkey.report.notes = (S.unitkey.report.notes || []).filter(function (n) { return String(n).indexOf("state-level root") < 0 && String(n).indexOf("IA DIV") < 0 && String(n).indexOf("duplicate UIC") < 0; });
+      if (d.stateRoots.length) S.unitkey.report.notes.push(d.stateRoots.length + " state-level / root unit" + (d.stateRoots.length > 1 ? "s" : "") + " left out of the MSC tree (IA DIV and similar). Spending on UICs whose only placement is a root row goes under State / JFHQ (root), not Unmapped UIC");
+      if (d.unitDupes && d.unitDupes.length) S.unitkey.report.notes.push(d.unitDupes.length + " UIC" + (d.unitDupes.length > 1 ? "s were" : " was") + " listed on more than one Units-tab row; the tree uses the real MSC / battalion / company placement, not the IA DIV / state-root row");
     }
     var unitKeys = Object.keys(unitBy).sort(function (a, b) { return b.length - a.length; });
     function uicFind(raw) {
@@ -582,7 +631,7 @@
     d.hasUnits = units.length > 0;
     d.commitHasUic = !!(S.commit && S.commit.report && S.commit.report.hasUic);
 
-    var UN = "Unmapped";
+        var UN = "Unmapped";
     // Functional Area -> Account (Accounts tab, plus FA/Account pairs on the funding key).
     //   1. exact: same letters/digits, ignoring case, spaces, dashes and hidden characters
     //   2. prefix: the LONGEST key FA (5+ characters) that the report's FA starts with (key lists 100101B1PR or 10010 -> covers 100101B1PRID)
@@ -846,7 +895,7 @@
     dpckey: "DPC, Description, Account, TDC",
     cikey: "Commitment Item, Description",
     spkey: "Prioritization, Account",
-    unitkey: "UIC, Unit Name, MSC, Battalion/Unit, Hierarchy Level (MSC highest, then Battalion/Unit, then Subordinate UIC = company). State-level root rows are left out of the MSC tree; spending on those UICs goes under State / JFHQ (root), not Unmapped. Parent UIC used when present",
+    unitkey: "UIC, Unit Name, MSC, Battalion/Unit, Hierarchy Level (MSC highest, then Battalion/Unit, then Subordinate UIC = company). State-level / IA DIV / root rows (G3.ROOT_UNITS) are never MSC or parent nodes. If a UIC is listed under a root and also under a real MSC/battalion, the tree uses the real placement once. Spending on UICs whose only placement is a root row goes under State / JFHQ (root). Parent UIC used when present",
     hierkey: "Hierarchy Level and/or UIC, optional Parent UIC and Order (defines MSC > Battalion/Unit > UIC; UIC rows build the tree when present)",
     export: "contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fund_fonds / fund_finds / fund_fincode (206010D27 \u2192 206010; filter is 206010, 206011, 206510), fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum, unit_identification_code_|_uic (same as Aviation, plus UIC and Fund). contract_doc_no is joined to FMZ3 Earmarked Funds to attach Order (DPC)",
     commit: "Entry Type, Internal Order, Pay Group, Amount (Business, Fund Center, Fund, Fund Code, Functional Area, Cost Center, WBS, Funded Program, Account, SDN, Journal Date also present; UIC used in Spending by Unit when present)",

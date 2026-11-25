@@ -320,12 +320,16 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     const state = tree.find(n => n.id === '__state__' || n.level === 'State');
     const msc = tree.find(n => n.uic === 'W8AMAA');
     const bn = msc && msc.kids.find(n => n.uic === 'W8AQAA');
-    const co = bn && bn.kids.find(n => n.uic === 'W8AQ0B' || (n.kids && n.kids.length));
     const hasCo = !!(bn && bn.kids && bn.kids.some(k => k.level === 'UIC'));
-    const hasHq = !!(bn && bn._own && bn._own.total);
-    const hasDpc = !!(bn && bn.kids && bn.kids.some(k => k.dpcs && k.dpcs.length));
-    const stUic = (G3.data.lines.filter(l => l.src === 'export' && (l.uicKey === 'W8AAAA' || G3.util.uk(l.uic) === 'W8AAAA')));
+    const co = bn && bn.kids.find(n => n.uic === 'W8AQ0B');
+    function walk(nodes, acc) { (nodes || []).forEach(n => { acc.push(n); walk(n.kids, acc); }); return acc; }
+    const flat = walk(tree, []);
+    const aq0bN = flat.filter(n => n.uic === 'W8AQ0B').length;
+    const iaDivNode = flat.some(n => /IA\s*DIV/i.test(n.name || '') || n.uic === 'W8ADIV');
+    const stUic = (G3.data.lines.filter(l => l.src === 'export' && l.fy === fy && (l.uicKey === 'W8AAAA' || G3.util.uk(l.uic) === 'W8AAAA')));
     const unmappedHasState = (G3.data.topUnmappedUic || []).some(u => /W8AAAA/i.test(u.uic));
+    const placed = G3.data.unitBy.W8AQ0B || {};
+    const divRoot = G3.data.unitBy.W8ADIV || {};
     G3.renderDrawer();
     const um = ((document.getElementById('dUnmapped') || {}).textContent || '') + ' ' + ((document.getElementById('tFiles') || {}).textContent || '');
     const panel = !!document.getElementById('unitPanel'), xd = !!document.getElementById('uicDpcPanel');
@@ -342,9 +346,12 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
       sumO, sumD, sumC, exO, exD, cmC, cmO,
       hasState: !!state, stateKids: state ? state.kids.length : 0, stateTotal: state ? state.total : 0,
       stN: stUic.length, stAmt: stUic.reduce((s, l) => s + od(l), 0), unmappedHasState,
-      hasAM: !!msc, has133: !!bn, hasCo, hasHq, hasDpc,
+      hasAM: !!msc, has133: !!bn, hasCo, aq0bN, iaDivNode,
+      placedParent: placed.parent, placedMsc: placed.msc, divRoot: !!divRoot.stateRoot,
+      dupes: (G3.data.unitDupes || []).map(u => u.uic).join(','),
       levels: (tree[0] && tree[0].kids && tree[0].kids[0] && tree[0].kids[0].kids) ? 3 : 0,
-      panel, xd, dpcSel, expBtn,
+      panel, xd: !!document.getElementById('uicDpcPanel'), dpcSel: !!document.querySelector('#page-sof select[data-st="order"]'), expBtn,
+      hqText: /HQ \/ direct/i.test(document.getElementById('unitPanel') ? document.getElementById('unitPanel').innerText : ''),
       umJoin: /SOF .* FMZ3 Order join/i.test(um) || /Earmarked Funds = contract_doc_no/i.test(um),
       umState: /State \/ JFHQ/i.test(um) || /state-level root/i.test(um),
       umExcl: /Excluded DPCs/i.test(um) && /NGDFHDOU/i.test(um),
@@ -362,10 +369,39 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(jn.conflicts > 0 && jn.umJoin, 'multi-Order earmarked documents are split by Amount Total share and listed in Data details (' + jn.conflicts + ')');
   ok(jn.joinUnmatched > 0, 'unmatched SOF docs go to No order (no FMZ3 match) with dollars in Data details');
   ok(jn.hasAM && jn.has133 && jn.hasCo && jn.levels >= 3, 'Spending by Unit tree is 3 levels: MSC expands to battalions/units, units expand to companies');
-  ok(jn.hasState && jn.stateKids > 0 && jn.stN > 0 && !jn.unmappedHasState && jn.umState, 'State-level root UIC W8AAAA is under State / JFHQ (root), not Unmapped UIC (' + jn.stN + ' SOF rows, $' + Math.round(jn.stAmt) + ')');
-  ok(jn.hasDpc && jn.panel && jn.xd && jn.dpcSel && jn.expBtn, 'Company -> DPC drill, DPC/order filter, Company x DPC table, and Expand all are on the page');
+  ok(jn.hasState && Math.abs((jn.stateTotal || 0) - (jn.stAmt || 0)) < 0.05 && jn.stN > 0 && !jn.unmappedHasState && jn.umState, 'State-level root UIC W8AAAA spending is under State / JFHQ (root), not Unmapped UIC (' + jn.stN + ' SOF rows, $' + Math.round(jn.stAmt) + ')');
+  ok(jn.panel && jn.expBtn && !jn.xd && !jn.dpcSel && !jn.hqText, 'SOF unit tree has Expand all, no Company x DPC table, no DPC/Order filter, and no HQ / direct rows');
+  ok(!jn.iaDivNode && jn.divRoot && jn.aq0bN === 1 && jn.placedParent === 'W8AQAA' && jn.placedMsc === 'W8AMAA' && /W8AQ0B/.test(jn.dupes), 'IA DIV is not a tree node; duplicate UIC W8AQ0B appears once under 1-133 Infantry (W8AQAA), not under IA DIV');
   ok(!jn.ngInUnmapped && !jn.commitHasExcl && jn.umExcl && (jn.excluded > 0 || jn.uloLabel >= 0), 'NGDFHDOU is excluded from commitments and unmapped DPC list; SOF dollars on that Order are kept as No order (excluded DPC)');
   ok(jn.fmzRows > jn.uloN, 'zero-open FMZ3 rows are kept for the Order lookup but left out of Unliquidated (' + jn.uloN + ' open / ' + jn.fmzRows + ' loaded)');
+
+  // ---- IDT / AT Unit spending by DPC (TDC > DPC under the unit tree) ----
+  const idtU = await pU.evaluate(() => {
+    location.hash = '#/idt'; G3.refresh();
+    const fy = G3.state.fy;
+    const accts = (G3.data.accounts || []).filter(a => a.program === 'idt').map(a => a.id);
+    const tree = G3.unitRollup(fy, l => accts.indexOf(l.account) >= 0, { withTdc: true });
+    const msc = tree.find(n => n.uic === 'W8AMAA') || tree[0];
+    const bn = msc && msc.kids.find(n => n.uic === 'W8AQAA');
+    const co = bn && bn.kids.find(n => n.uic === 'W8AQ0B');
+    const tdcN = co && co.tdcs ? co.tdcs.length : 0;
+    const dpcN = co && co.tdcs ? co.tdcs.reduce((s, t) => s + (t.dpcs || []).length, 0) : 0;
+    const tdcSum = (co && co.tdcs ? co.tdcs.reduce((s, t) => s + t.total, 0) : 0);
+    const panel = !!document.getElementById('idtUnitDpc');
+    const html = (document.getElementById('idtUnitDpc') || {}).innerText || '';
+    return {
+      panel, hasMsc: !!msc, hasBn: !!bn, hasCo: !!co, tdcN, dpcN,
+      tdcAdds: Math.abs(tdcSum - (co ? co.total : -1)) < 0.05,
+      hasTdcLabel: /Unit spending by DPC/.test(html),
+      iaDiv: /IA DIV/.test(html), hq: /HQ \/ direct/.test(html),
+      atPanel: (location.hash = '#/at', G3.refresh(), !!document.getElementById('atUnitDpc')),
+      schPanel: (location.hash = '#/sch', G3.refresh(), !!document.getElementById('schUnitDpc')),
+      mobPanel: (location.hash = '#/mob', G3.refresh(), !!document.getElementById('mobUnitDpc'))
+    };
+  });
+  console.log(JSON.stringify(idtU));
+  ok(idtU.panel && idtU.hasTdcLabel && idtU.hasMsc && idtU.hasBn && idtU.hasCo && idtU.tdcN > 0 && idtU.dpcN > 0 && idtU.tdcAdds, 'IDT Unit spending by DPC: MSC > battalion > company, company TDC + DPC add back to the company total (' + idtU.tdcN + ' TDCs, ' + idtU.dpcN + ' DPCs)');
+  ok(idtU.atPanel && idtU.schPanel && idtU.mobPanel && !idtU.iaDiv && !idtU.hq, 'AT, Schools, and Mob also have Unit spending by DPC; IA DIV and HQ / direct are not on the IDT section');
 
   // ---- Status of Funds accounts table fits without a horizontal scroll bar at 1920 and 1600 ----
   const fit = [];

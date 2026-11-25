@@ -94,6 +94,14 @@
     var fundTab = [["Account", "TDP", "AFP", "Allotment", "SAG", "MDEP"]], acctTab = [["Functional Area", "Account"]], dpcTab = [["DPC", "Description", "Account", "TDC"]], spTab = [["Prioritization", "Account"]];
     var unitTab = [["UIC", "Unit Name", "MSC", "Battalion / Unit", "Hierarchy Level", "Parent UIC", "City", "State"]];
     UNITS.forEach(function (u) { unitTab.push([u.uic, u.name, u.msc, u.bn, u.level, u.parent, u.city, "IA"]); });
+    // Cole's key also lists many UICs under IA DIV (a state-level root). Those UICs are mapped under a real
+    // MSC/battalion too — the tree must use that placement, not IA DIV. Listed first so a first-row-wins bug would fail.
+    unitTab.splice(1, 0,
+      ["W8ADIV", "IA DIV", "IA DIV", "", "Division", "", "Johnston", "IA"],
+      ["W8AQ0B", "A Co, 1-133 Infantry", "IA DIV", "IA DIV", "UIC", "W8ADIV", "Webster City", "IA"],
+      ["W8AQAA", "1-133 Infantry", "IA DIV", "", "Battalion / Unit", "W8ADIV", "Iowa Falls", "IA"],
+      ["W8AQ0A", "HHC, 1-133 Infantry", "IA DIV", "IA DIV", "Subordinate UIC", "W8ADIV", "Iowa Falls", "IA"]
+    );
     var hierTab = [["UIC", "Hierarchy Level", "Parent UIC", "Order"]];
     hierTab.push(["", "MSC", "", 1], ["", "Battalion / Unit", "", 2], ["", "UIC", "", 3]);
     UNITS.forEach(function (u) { hierTab.push([u.uic, u.level, u.parent, u.level === "MSC" ? 1 : u.level === "Battalion / Unit" ? 2 : 3]); });

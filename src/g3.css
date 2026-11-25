@@ -141,11 +141,18 @@ table.unit tr.lmsc td.num .xbar i{background:#1d4ed8}
 table.unit tr.lbn td.num .xbar i{background:#0d9488}
 table.unit tr.lco td.num .xbar i{background:#7c3aed}
 table.unit tr.ldpc td.num .xbar i{background:#c9a227}
+table.unit tr.ltdc{border-left-color:#4f46e5}
+table.unit tr.ltdc .lvlb{background:#4f46e5;color:#fff}
+table.unit tr.ltdc td.num .xbar i{background:#4f46e5}
+table.unit tr.l6 td.un{padding-left:128px}
 table.unit tr.lst td.num .xbar i,table.unit tr.state td.num .xbar i{background:#64748b}
 .hacc.hunit{margin-top:14px}
 .hacc.hunit .fi{background:#2563eb}
 #unitPanel .tablehead,#uicDpcPanel .tablehead{gap:10px;flex-wrap:wrap}
-#unitPanel .unitacts{display:flex;gap:8px;margin-left:auto;align-items:center}
+#unitPanel .unitacts,.unitdpc .unitacts{display:flex;gap:8px;margin-left:auto;align-items:center}
+.unitdpc{scroll-margin-top:72px}
+.unitdpc .tablehead{gap:10px;flex-wrap:wrap}
+.unitdpc .filters{margin:0 16px 12px}
 #uicDpcPanel label.ufl{margin:0;min-width:200px;flex:1}
 /* Color-coded unit / DPC filter selects */
 .filters label.ufl{border-radius:10px;padding:6px 8px 8px;background:#f8fafc;border:1px solid var(--line);border-top:3px solid var(--ufl,#94a3b8)}

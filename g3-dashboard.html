@@ -485,11 +485,18 @@ table.unit tr.lmsc td.num .xbar i{background:#1d4ed8}
 table.unit tr.lbn td.num .xbar i{background:#0d9488}
 table.unit tr.lco td.num .xbar i{background:#7c3aed}
 table.unit tr.ldpc td.num .xbar i{background:#c9a227}
+table.unit tr.ltdc{border-left-color:#4f46e5}
+table.unit tr.ltdc .lvlb{background:#4f46e5;color:#fff}
+table.unit tr.ltdc td.num .xbar i{background:#4f46e5}
+table.unit tr.l6 td.un{padding-left:128px}
 table.unit tr.lst td.num .xbar i,table.unit tr.state td.num .xbar i{background:#64748b}
 .hacc.hunit{margin-top:14px}
 .hacc.hunit .fi{background:#2563eb}
 #unitPanel .tablehead,#uicDpcPanel .tablehead{gap:10px;flex-wrap:wrap}
-#unitPanel .unitacts{display:flex;gap:8px;margin-left:auto;align-items:center}
+#unitPanel .unitacts,.unitdpc .unitacts{display:flex;gap:8px;margin-left:auto;align-items:center}
+.unitdpc{scroll-margin-top:72px}
+.unitdpc .tablehead{gap:10px;flex-wrap:wrap}
+.unitdpc .filters{margin:0 16px 12px}
 #uicDpcPanel label.ufl{margin:0;min-width:200px;flex:1}
 /* Color-coded unit / DPC filter selects */
 .filters label.ufl{border-radius:10px;padding:6px 8px 8px;background:#f8fafc;border:1px solid var(--line);border-top:3px solid var(--ufl,#94a3b8)}
@@ -737,6 +744,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var fundTab = [["Account", "TDP", "AFP", "Allotment", "SAG", "MDEP"]], acctTab = [["Functional Area", "Account"]], dpcTab = [["DPC", "Description", "Account", "TDC"]], spTab = [["Prioritization", "Account"]];
     var unitTab = [["UIC", "Unit Name", "MSC", "Battalion / Unit", "Hierarchy Level", "Parent UIC", "City", "State"]];
     UNITS.forEach(function (u) { unitTab.push([u.uic, u.name, u.msc, u.bn, u.level, u.parent, u.city, "IA"]); });
+    // Cole's key also lists many UICs under IA DIV (a state-level root). Those UICs are mapped under a real
+    // MSC/battalion too — the tree must use that placement, not IA DIV. Listed first so a first-row-wins bug would fail.
+    unitTab.splice(1, 0,
+      ["W8ADIV", "IA DIV", "IA DIV", "", "Division", "", "Johnston", "IA"],
+      ["W8AQ0B", "A Co, 1-133 Infantry", "IA DIV", "IA DIV", "UIC", "W8ADIV", "Webster City", "IA"],
+      ["W8AQAA", "1-133 Infantry", "IA DIV", "", "Battalion / Unit", "W8ADIV", "Iowa Falls", "IA"],
+      ["W8AQ0A", "HHC, 1-133 Infantry", "IA DIV", "IA DIV", "Subordinate UIC", "W8ADIV", "Iowa Falls", "IA"]
+    );
     var hierTab = [["UIC", "Hierarchy Level", "Parent UIC", "Order"]];
     hierTab.push(["", "MSC", "", 1], ["", "Battalion / Unit", "", 2], ["", "UIC", "", 3]);
     UNITS.forEach(function (u) { hierTab.push([u.uic, u.level, u.parent, u.level === "MSC" ? 1 : u.level === "Battalion / Unit" ? 2 : 3]); });
@@ -995,6 +1010,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     "206011": ["OSS SCHOOLS", "OSS OPS/TRAINING"],
     "206510": ["ANTITERRORISM", "SECURITY", "TRAUMA TRAINING 2065"]
   };
+  // State-level / above-MSC roots that must never appear as MSC or parent nodes. UICs also listed under one of these
+  // (e.g. IA DIV) use their real MSC > Battalion > Company row instead.
+  G3.ROOT_UNITS = ["IA DIV", "IOWA DIV", "JFHQ-IA"];
   // ==================
 
   // ---------- helpers (Aviation funding.js) ----------
@@ -1436,22 +1454,38 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     function ciSeen(c) { if (hasCi && c && !d.ciMap[kn(c)]) unm.ci[c] = (unm.ci[c] || 0) + 1; }
 
     // ---------- Units + Hierarchy Level (MSC > Battalion/Unit > subordinate UIC) ----------
-    function isStateLevel(s) {
-      var x = an(s);
-      return /^(STATE|STATEROOT|STATELEVEL|STATELEVELROOT|STATELVL|TAG|STARC|ROOT)$/.test(x) || /^(STATE)(LEVEL|ROOT|LVL|\s)/.test(x) || /STATELEVELROOT|STATE\s*LEVEL\s*ROOT/.test(x);
+    function compactName(v) { return an(v).replace(/[^A-Z0-9]/g, ""); }
+    G3.isRootName = function (v) {
+      var x = an(v), c = compactName(v);
+      if (!x && !c) return false;
+      var list = G3.ROOT_UNITS || [];
+      for (var i = 0; i < list.length; i++) {
+        var n = an(list[i]), cn = compactName(list[i]);
+        if (x === n || (c && cn && c === cn)) return true;
+      }
+      if (/^(IA|IOWA)DIV(ISION)?$/.test(c) || /^JFHQIA$/.test(c)) return true;
+      return false;
+    };
+    function isRootLevel(v) {
+      var x = an(v);
+      if (!x) return false;
+      if (/^(STATE|STATEROOT|STATELEVEL|STATELEVELROOT|STATELVL|TAG|STARC|ROOT|TOP|TOPLEVEL|TOPLVL)$/.test(x)) return true;
+      if (/^(STATE|TOP|DIVISION)(\s)?(LEVEL|ROOT|LVL)/.test(x) || /STATELEVELROOT|STATE\s*LEVEL\s*ROOT/.test(x)) return true;
+      if (/^(DIVISION|DIVISIONLEVEL|DIVLVL|ABOVEMSC)$/.test(x)) return true;
+      return false;
     }
-    function lvlCanon(s) {
-      var x = an(s);
+    function lvlCanon(v) {
+      var x = an(v);
       if (!x) return "";
-      if (isStateLevel(s)) return "State";
+      if (isRootLevel(v) || G3.isRootName(v)) return "State";
       if (/^MSC|MAJORSUBORDINATE/.test(x) || x === "MAJOR SUBORDINATE COMMAND") return "MSC";
       if (/BATTALION|\bBN\b|^UNIT$|BATTALIONUNIT|BATTALION\/UNIT/.test(x) || x === "BATTALION / UNIT") return "Battalion / Unit";
       if (/^(UIC|SUBORDINATE|SUBORDINATEUIC|COMPANY|BATTERY|TROOP|DETACHMENT|UNITIDENTIFICATION)/.test(x) || /SUBORDINATE\s*UIC/.test(x)) return "UIC";
-      return txt(s);
+      return txt(v);
     }
     var defLevels = G3.UNIT_LEVELS.slice(), levelOrder = [], levelSeen = {};
-    function addLevel(s, ord) {
-      var L = lvlCanon(s); if (!L) return;
+    function addLevel(v, ord) {
+      var L = lvlCanon(v); if (!L || L === "State") return;
       if (!levelSeen[L]) { levelSeen[L] = { name: L, ord: ord == null || ord === "" || isNaN(+ord) ? 1000 + levelOrder.length : +ord }; levelOrder.push(L); }
       else if (ord != null && ord !== "" && !isNaN(+ord) && +ord < levelSeen[L].ord) levelSeen[L].ord = +ord;
     }
@@ -1459,37 +1493,87 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     rows("unitkey").forEach(function (r) { if (r.level) addLevel(r.level, r.ord); });
     if (!levelOrder.length) levelOrder = defLevels.slice();
     else levelOrder.sort(function (a, b) { return levelSeen[a].ord - levelSeen[b].ord || defLevels.indexOf(a) - defLevels.indexOf(b); });
-    // Prefer the standard three names when the tab's labels fold onto them
     d.unitLevels = levelOrder;
-    var unitBy = {}, units = [];
-    function putUnit(r) {
-      var k = uk(r.uic); if (!k) return null;
-      if (unitBy[k]) return unitBy[k];
-      var u = { uic: k, raw: r.uic, name: r.name || r.uic, msc: r.msc || "", bn: r.bn || "", level: lvlCanon(r.level), parent: r.parent || "", kids: [] };
-      unitBy[k] = u; units.push(u); return u;
-    }
-    rows("unitkey").forEach(putUnit);
-    rows("hierkey").forEach(function (r) {
-      if (!r.uic) return;
-      var u = putUnit({ uic: r.uic, name: r.name || r.uic, msc: "", bn: "", level: r.level, parent: r.parent });
-      if (r.level) u.level = u.level || lvlCanon(r.level);
-      if (r.parent && !u.parent) u.parent = r.parent;
+
+    // Collect every Units / Hierarchy row. A UIC may appear under IA DIV (or another root) AND under a real
+    // MSC / battalion; we keep one placement — the deepest real MSC > Battalion > Company row.
+    var rawUnitRows = [];
+    rows("unitkey").forEach(function (r) { if (uk(r.uic)) rawUnitRows.push({ src: "unitkey", uic: r.uic, name: r.name, msc: r.msc, bn: r.bn, level: r.level, parent: r.parent }); });
+    rows("hierkey").forEach(function (r) { if (r.uic) rawUnitRows.push({ src: "hierkey", uic: r.uic, name: r.name || r.uic, msc: "", bn: "", level: r.level, parent: r.parent }); });
+    var rootKeys = {};
+    rawUnitRows.forEach(function (r) {
+      var k = uk(r.uic);
+      if (isRootLevel(r.level) || G3.isRootName(r.name) || G3.isRootName(r.uic)) rootKeys[k] = 1;
+      else if (G3.isRootName(r.msc) && uk(r.msc) === k) rootKeys[k] = 1;
     });
-    // If MSC / Battalion values are UICs, resolve to unit names. Also fill missing parent/level from the Units columns.
+    function isRootRef(v) { if (!v) return false; if (G3.isRootName(v)) return true; var k = uk(v); return !!(k && rootKeys[k]); }
+    function rowIsRootPlacement(r) {
+      // The root unit itself (IA DIV, state-level row). A real MSC whose parent is the state
+      // root is not a root placement — that is the normal tree. A company listed only under
+      // IA DIV, with no real MSC/battalion, is a root listing (so a duplicate under a real
+      // battalion can win).
+      if (isRootLevel(r.level) || G3.isRootName(r.name) || G3.isRootName(r.uic)) return true;
+      var k = uk(r.uic), lvl = lvlCanon(r.level);
+      if (lvl === "MSC") return false;
+      var realMsc = r.msc && !isRootRef(r.msc) && uk(r.msc) !== k;
+      var realBn = r.bn && !isRootRef(r.bn) && uk(r.bn) !== k;
+      var realPar = r.parent && !isRootRef(r.parent) && uk(r.parent) !== k && !rootKeys[uk(r.parent)];
+      if (realMsc || realBn || realPar) return false;
+      if (isRootRef(r.msc) || isRootRef(r.parent) || (r.parent && rootKeys[uk(r.parent)]) || (r.msc && rootKeys[uk(r.msc)])) return true;
+      return false;
+    }
+    function placementScore(r) {
+      if (rowIsRootPlacement(r)) return 0;
+      var lvl = lvlCanon(r.level), score = 1;
+      var k = uk(r.uic);
+      var bnOk = r.bn && !isRootRef(r.bn) && uk(r.bn) !== k;
+      var mscOk = r.msc && !isRootRef(r.msc) && uk(r.msc) !== k;
+      var parOk = r.parent && !isRootRef(r.parent) && uk(r.parent) !== k;
+      if (mscOk) score += 10;
+      if (bnOk) score += 20;
+      if (parOk) score += 4;
+      if (lvl === "UIC") score += 5;
+      else if (lvl === "Battalion / Unit") score += 3;
+      else if (lvl === "MSC") score += 2;
+      if (r.src === "unitkey") score += 1;
+      return score;
+    }
+    var grouped = {}, best = {};
+    rawUnitRows.forEach(function (r) {
+      var k = uk(r.uic); (grouped[k] = grouped[k] || []).push(r);
+      var sc = placementScore(r);
+      if (!best[k] || sc > best[k].score) best[k] = { row: r, score: sc };
+    });
+    var unitBy = {}, units = [];
+    Object.keys(best).forEach(function (k) {
+      var r = best[k].row, onlyRoot = best[k].score === 0;
+      var u = { uic: k, raw: r.uic, name: r.name || r.uic, msc: r.msc || "", bn: r.bn || "", level: onlyRoot ? "State" : lvlCanon(r.level), parent: r.parent || "", kids: [], stateRoot: onlyRoot };
+      unitBy[k] = u; units.push(u);
+    });
+    d.unitDupes = Object.keys(grouped).filter(function (k) { return grouped[k].length > 1; }).map(function (k) {
+      return { uic: k, name: (unitBy[k] && unitBy[k].name) || k, n: grouped[k].length, used: best[k] && best[k].score > 0 ? "real placement" : "root only" };
+    });
+
     function resolveRef(v) {
       if (!v) return { key: "", name: "", uic: "" };
+      if (isRootRef(v) && !unitBy[uk(v)]) return { key: "", name: txt(v), uic: "", root: true };
       var k = uk(v);
-      if (k && unitBy[k]) return { key: k, name: unitBy[k].name, uic: k };
+      if (k && unitBy[k]) return { key: k, name: unitBy[k].name, uic: k, root: !!unitBy[k].stateRoot };
       var nm = txt(v), hit = "";
       if (nm) units.forEach(function (u) { if (!hit && an(u.name) === an(nm)) hit = u.uic; });
-      if (hit) return { key: hit, name: unitBy[hit].name, uic: hit };
-      return { key: k || an(nm), name: nm || k, uic: k };
+      if (hit) return { key: hit, name: unitBy[hit].name, uic: hit, root: !!unitBy[hit].stateRoot };
+      return { key: k || an(nm), name: nm || k, uic: k, root: isRootRef(v) };
     }
     units.forEach(function (u) {
+      if (u.stateRoot) { u.parent = ""; u.msc = ""; u.bn = ""; u.level = "State"; return; }
       var m = resolveRef(u.msc), b = resolveRef(u.bn), p = resolveRef(u.parent);
-      u.msc = m.key; u.mscName = m.name || u.msc; u.bn = b.key; u.bnName = b.name || u.bn;
-      if (p.key) u.parent = p.key;
-      if (!u.level) {
+      u.msc = (m.root || (m.key && unitBy[m.key] && unitBy[m.key].stateRoot)) ? "" : m.key;
+      u.mscName = u.msc ? (m.name || u.msc) : "";
+      u.bn = (b.root || (b.key && unitBy[b.key] && unitBy[b.key].stateRoot) || (b.key && unitBy[b.key] && unitBy[b.key].level === "State")) ? "" : b.key;
+      u.bnName = u.bn ? (b.name || u.bn) : "";
+      if (p.key && !p.root && unitBy[p.key] && !unitBy[p.key].stateRoot) u.parent = p.key;
+      else u.parent = "";
+      if (!u.level || u.level === "State") {
         if (u.uic && u.msc && u.uic === u.msc && (!u.bn || u.uic === u.bn)) u.level = "MSC";
         else if (u.uic && u.bn && u.uic === u.bn) u.level = "Battalion / Unit";
         else if (u.msc && !u.bn && u.uic === u.msc) u.level = "MSC";
@@ -1497,37 +1581,17 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       }
       if (!u.parent) {
         if (u.level === "MSC") u.parent = "";
-        else if (u.level === "Battalion / Unit") u.parent = u.msc && u.msc !== u.uic ? u.msc : "";
-        else u.parent = (u.bn && u.bn !== u.uic ? u.bn : "") || (u.msc && u.msc !== u.uic ? u.msc : "");
+        else if (u.level === "Battalion / Unit") u.parent = (u.msc && u.msc !== u.uic && unitBy[u.msc] && unitBy[u.msc].level === "MSC") ? u.msc : "";
+        else u.parent = (u.bn && u.bn !== u.uic && unitBy[u.bn] && !unitBy[u.bn].stateRoot ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "");
+      } else if (unitBy[uk(u.parent)] && (unitBy[uk(u.parent)].stateRoot || unitBy[uk(u.parent)].level === "State")) {
+        u.parent = (u.level === "Battalion / Unit") ? (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "") : ((u.bn && unitBy[u.bn] && !unitBy[u.bn].stateRoot && u.bn !== u.uic ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : ""));
       }
-    });
-    // State-level root rows (Hierarchy Level = State / State Level Root / TAG / STARC, etc.)
-    // stay in the UIC lookup so SOF spending on those UICs is not unmapped, but they are
-    // not used as parents of MSCs and they are not MSC-tree roots.
-    units.forEach(function (u) {
-      if (u.level === "State") { u.stateRoot = true; u.parent = ""; return; }
-      var pU = u.parent ? unitBy[uk(u.parent)] : null;
-      if (pU && pU.level === "State") u.parent = "";
-      if (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "State") {
-        u.stateUic = u.msc;
-        if (u.level === "MSC") u.msc = u.uic;
-        else u.msc = "";
-      }
-    });
-    units.forEach(function (u) {
-      if (u.stateRoot) return;
-      if (!u.parent) {
-        if (u.level === "MSC") u.parent = "";
-        else if (u.level === "Battalion / Unit") u.parent = (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic) ? u.msc : "";
-        else u.parent = (u.bn && u.bn !== u.uic && unitBy[u.bn] ? u.bn : "") || (u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC" && u.msc !== u.uic ? u.msc : "");
-      }
-      if (u.level !== "MSC" && u.parent && !unitBy[uk(u.parent)] && u.msc && unitBy[u.msc] && unitBy[u.msc].level === "MSC") u.parent = u.msc;
     });
     d.stateRoots = units.filter(function (u) { return u.stateRoot; });
-    if (d.stateRoots.length && S.unitkey && S.unitkey.report) {
-      var note = d.stateRoots.length + " state-level root row" + (d.stateRoots.length > 1 ? "s" : "") + " left out of the MSC tree (spending on those UICs goes under State / JFHQ (root), not Unmapped UIC)";
-      S.unitkey.report.notes = (S.unitkey.report.notes || []).filter(function (n) { return String(n).indexOf("state-level root") < 0; });
-      S.unitkey.report.notes.push(note);
+    if (S.unitkey && S.unitkey.report) {
+      S.unitkey.report.notes = (S.unitkey.report.notes || []).filter(function (n) { return String(n).indexOf("state-level root") < 0 && String(n).indexOf("IA DIV") < 0 && String(n).indexOf("duplicate UIC") < 0; });
+      if (d.stateRoots.length) S.unitkey.report.notes.push(d.stateRoots.length + " state-level / root unit" + (d.stateRoots.length > 1 ? "s" : "") + " left out of the MSC tree (IA DIV and similar). Spending on UICs whose only placement is a root row goes under State / JFHQ (root), not Unmapped UIC");
+      if (d.unitDupes && d.unitDupes.length) S.unitkey.report.notes.push(d.unitDupes.length + " UIC" + (d.unitDupes.length > 1 ? "s were" : " was") + " listed on more than one Units-tab row; the tree uses the real MSC / battalion / company placement, not the IA DIV / state-root row");
     }
     var unitKeys = Object.keys(unitBy).sort(function (a, b) { return b.length - a.length; });
     function uicFind(raw) {
@@ -1543,7 +1607,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     d.hasUnits = units.length > 0;
     d.commitHasUic = !!(S.commit && S.commit.report && S.commit.report.hasUic);
 
-    var UN = "Unmapped";
+        var UN = "Unmapped";
     // Functional Area -> Account (Accounts tab, plus FA/Account pairs on the funding key).
     //   1. exact: same letters/digits, ignoring case, spaces, dashes and hidden characters
     //   2. prefix: the LONGEST key FA (5+ characters) that the report's FA starts with (key lists 100101B1PR or 10010 -> covers 100101B1PRID)
@@ -1807,7 +1871,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     dpckey: "DPC, Description, Account, TDC",
     cikey: "Commitment Item, Description",
     spkey: "Prioritization, Account",
-    unitkey: "UIC, Unit Name, MSC, Battalion/Unit, Hierarchy Level (MSC highest, then Battalion/Unit, then Subordinate UIC = company). State-level root rows are left out of the MSC tree; spending on those UICs goes under State / JFHQ (root), not Unmapped. Parent UIC used when present",
+    unitkey: "UIC, Unit Name, MSC, Battalion/Unit, Hierarchy Level (MSC highest, then Battalion/Unit, then Subordinate UIC = company). State-level / IA DIV / root rows (G3.ROOT_UNITS) are never MSC or parent nodes. If a UIC is listed under a root and also under a real MSC/battalion, the tree uses the real placement once. Spending on UICs whose only placement is a root row goes under State / JFHQ (root). Parent UIC used when present",
     hierkey: "Hierarchy Level and/or UIC, optional Parent UIC and Order (defines MSC > Battalion/Unit > UIC; UIC rows build the tree when present)",
     export: "contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fund_fonds / fund_finds / fund_fincode (206010D27 \u2192 206010; filter is 206010, 206011, 206510), fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum, unit_identification_code_|_uic (same as Aviation, plus UIC and Fund). contract_doc_no is joined to FMZ3 Earmarked Funds to attach Order (DPC)",
     commit: "Entry Type, Internal Order, Pay Group, Amount (Business, Fund Center, Fund, Fund Code, Functional Area, Cost Center, WBS, Funded Program, Account, SDN, Journal Date also present; UIC used in Spending by Unit when present)",
@@ -2040,59 +2104,103 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   };
   G3.unitName = function (code) { var u = G3.unitInfo(code); return u ? u.name : ""; };
   // Spending by unit from the funds export (obligations + disbursements). Commitments are included only when that report has a UIC column.
-  G3.unitRollup = function (fy, filter) {
+  G3.unitRollup = function (fy, filter, opts) {
+    opts = opts || {};
+    var withTdc = !!opts.withTdc;
     var st = G3.state, incCommit = !!G3.data.commitHasUic;
     var lines = G3.linesFy(fy).filter(function (l) {
       if (l.src === "commit") { if (!incCommit || !l.uic) return false; }
       else if (l.src !== "export") return false;
       return G3.filterOk(l) && G3.unitOk(l) && G3.orderOk(l) && (!filter || filter(l));
     });
-    var by = {}, UN = "__unmapped__";
+    var by = {}, UN = "__unmapped__", ST = "__state__";
     function node(id, meta) {
-      return by[id] || (by[id] = { id: id, uic: meta.uic || "", name: meta.name, level: meta.level, parent: meta.parent || "", msc: meta.msc || "", bn: meta.bn || "", oblig: 0, disb: 0, commit: 0, total: 0, n: 0, kids: [] });
+      return by[id] || (by[id] = { id: id, uic: meta.uic || "", name: meta.name, level: meta.level, parent: meta.parent || "", msc: meta.msc || "", bn: meta.bn || "", oblig: 0, disb: 0, commit: 0, total: 0, n: 0, kids: [], byTdc: null, byDpc: null });
     }
-    (G3.data.units || []).forEach(function (u) { node(u.uic, { uic: u.uic, name: u.name, level: u.level, parent: u.parent, msc: u.msc, bn: u.bn }); });
+    var state = node(ST, { uic: "", name: "State / JFHQ (root)", level: "State", parent: "", msc: "", bn: "" });
+    (G3.data.units || []).forEach(function (u) {
+      if (u.stateRoot) return;
+      node(u.uic, { uic: u.uic, name: u.name, level: u.level, parent: u.parent, msc: u.msc, bn: u.bn });
+    });
     var un = node(UN, { uic: "", name: "Unmapped UIC", level: "MSC", parent: "", msc: "", bn: "" });
     function addAmt(o, oblig, disb, commit) {
       o.oblig += oblig || 0; o.disb += disb || 0; o.commit += commit || 0; o.total += (oblig || 0) + (disb || 0) + (commit || 0); o.n++;
     }
-    function addDpc(o, p) {
-      if (!o.byDpc) o.byDpc = {};
-      var k = G3.util.kn(p.dpc) || G3.NONE_DPC;
+    function addTdc(o, p) {
+      if (!withTdc) return;
       var inf = p.dpc ? G3.dpcInfo(p.dpc) : null;
-      var d = o.byDpc[k] || (o.byDpc[k] = { id: o.id + "|D|" + k, code: p.dpc || "", name: p.dpc === G3.EXCL_DPC ? G3.EXCL_DPC_NAME : (p.dpc ? (inf ? inf.name : p.dpc + " (not in DPC key)") : G3.NONE_DPC_NAME), level: "DPC", uic: o.uic, parent: o.id, msc: o.msc, bn: o.bn, oblig: 0, disb: 0, commit: 0, total: 0, n: 0 });
+      var tdcName = p.dpc === G3.EXCL_DPC ? "No TDC" : (inf ? inf.tdc : "Not in DPC key");
+      var dname = p.dpc === G3.EXCL_DPC ? G3.EXCL_DPC_NAME : (p.dpc ? (inf ? inf.name : p.dpc + " (not in DPC key)") : G3.NONE_DPC_NAME);
+      o.byTdc = o.byTdc || {};
+      var t = o.byTdc[tdcName] || (o.byTdc[tdcName] = { id: o.id + "|T|" + tdcName, tdc: tdcName, name: tdcName, level: "TDC", uic: o.uic, parent: o.id, msc: o.msc, bn: o.bn, oblig: 0, disb: 0, commit: 0, total: 0, n: 0, byDpc: {} });
+      addAmt(t, p.oblig, p.disb, 0);
+      var dk = G3.util.kn(p.dpc) || G3.NONE_DPC;
+      var d = t.byDpc[dk] || (t.byDpc[dk] = { id: t.id + "|D|" + dk, code: p.dpc || "", name: dname, tdc: tdcName, level: "DPC", uic: o.uic, parent: t.id, msc: o.msc, bn: o.bn, oblig: 0, disb: 0, commit: 0, total: 0, n: 0 });
       addAmt(d, p.oblig, p.disb, 0);
     }
+    function metaOf(key) { return (G3.data.unitBy && G3.data.unitBy[key]) || null; }
     lines.forEach(function (l) {
       var o, parts = l.dpcParts && l.dpcParts.length ? l.dpcParts : [{ dpc: l.dpc || "", oblig: l.oblig, disb: l.disb }];
       if (st.order) parts = parts.filter(function (p) { return (G3.util.kn(p.dpc) || G3.NONE_DPC) === st.order; });
       if (!parts.length) return;
-      if (l.uicKey && by[l.uicKey]) o = by[l.uicKey];
+      var u = l.uicKey ? metaOf(l.uicKey) : null;
+      if (u && u.stateRoot) o = state;
+      else if (l.uicKey && by[l.uicKey]) o = by[l.uicKey];
       else if (l.uic) {
         var kid = "U:" + G3.util.uk(l.uic);
         o = by[kid] || node(kid, { uic: G3.util.uk(l.uic), name: l.uic, level: "UIC", parent: UN, msc: "", bn: "" });
       } else o = un;
       var oblig = 0, disb = 0, commit = st.order ? 0 : (l.commit || 0);
-      parts.forEach(function (p) { oblig += p.oblig || 0; disb += p.disb || 0; addDpc(o, p); });
+      parts.forEach(function (p) { oblig += p.oblig || 0; disb += p.disb || 0; addTdc(o, p); });
       addAmt(o, oblig, disb, commit);
     });
-    var ST = "__state__";
-    var state = node(ST, { uic: "", name: "State / JFHQ (root)", level: "State", parent: "", msc: "", bn: "" });
+    function tdcList(map) {
+      if (!map) return [];
+      return Object.keys(map).map(function (k) {
+        var t = map[k];
+        t.dpcs = t.byDpc ? Object.keys(t.byDpc).map(function (d) { return t.byDpc[d]; }).sort(function (a, b) { return b.total - a.total; }) : [];
+        return t;
+      }).sort(function (a, b) { return b.total - a.total; });
+    }
+    function mergeTdcMaps(a, b) {
+      var out = a || {};
+      Object.keys(b || {}).forEach(function (tk) {
+        var src = b[tk], dst = out[tk];
+        if (!dst) {
+          dst = out[tk] = { id: src.id, tdc: src.tdc, name: src.name, level: "TDC", uic: src.uic, parent: src.parent, msc: src.msc, bn: src.bn, oblig: 0, disb: 0, commit: 0, total: 0, n: 0, byDpc: {} };
+        }
+        dst.oblig += src.oblig; dst.disb += src.disb; dst.commit += src.commit; dst.total += src.total; dst.n += src.n;
+        Object.keys(src.byDpc || {}).forEach(function (dk) {
+          var sd = src.byDpc[dk], dd = dst.byDpc[dk];
+          if (!dd) dst.byDpc[dk] = { id: sd.id, code: sd.code, name: sd.name, tdc: sd.tdc, level: "DPC", uic: sd.uic, parent: dst.id, msc: sd.msc, bn: sd.bn, oblig: 0, disb: 0, commit: 0, total: 0, n: 0 };
+          dd = dst.byDpc[dk];
+          dd.oblig += sd.oblig; dd.disb += sd.disb; dd.commit += sd.commit; dd.total += sd.total; dd.n += sd.n;
+        });
+      });
+      return out;
+    }
     var list = Object.keys(by).map(function (k) { return by[k]; });
-    list.forEach(function (o) { o._own = { oblig: o.oblig, disb: o.disb, commit: o.commit, total: o.total, n: o.n }; o.kids = []; o.dpcs = o.byDpc ? Object.keys(o.byDpc).map(function (k) { return o.byDpc[k]; }).sort(function (a, b) { return b.total - a.total; }) : []; });
+    list.forEach(function (o) {
+      o._own = { oblig: o.oblig, disb: o.disb, commit: o.commit, total: o.total, n: o.n };
+      o._ownTdc = o.byTdc;
+      o.kids = [];
+      o.tdcs = tdcList(o.byTdc);
+    });
     list.forEach(function (o) {
       if (o.id === UN || o.id === ST) return;
-      if (o.level === "State") { state.kids.push(o); return; }
-      if (o.parent && by[o.parent] && by[o.parent].level !== "State" && o.parent !== o.id) by[o.parent].kids.push(o);
+      var pu = o.parent ? metaOf(o.parent) : null;
+      if (pu && pu.stateRoot) o.parent = "";
+      if (o.parent && by[o.parent] && !((metaOf(o.parent) || {}).stateRoot) && by[o.parent].level !== "State" && o.parent !== o.id) by[o.parent].kids.push(o);
       else if (o.level === "MSC") return;
-      else if (o.msc && by[o.msc] && o.msc !== o.uic && by[o.msc].level === "MSC") by[o.msc].kids.push(o);
+      else if (o.msc && by[o.msc] && o.msc !== o.uic && by[o.msc].level === "MSC" && !((metaOf(o.msc) || {}).stateRoot)) by[o.msc].kids.push(o);
       else un.kids.push(o);
     });
     function roll(o, seen) {
       seen = seen || {}; if (seen[o.id]) return o; seen[o.id] = 1;
-      var ch = { oblig: 0, disb: 0, commit: 0, total: 0, n: 0 };
-      o.kids.forEach(function (k) { roll(k, seen); ch.oblig += k.oblig; ch.disb += k.disb; ch.commit += k.commit; ch.total += k.total; ch.n += k.n; });
+      var ch = { oblig: 0, disb: 0, commit: 0, total: 0, n: 0 }, tmap = o._ownTdc ? JSON.parse(JSON.stringify(o._ownTdc)) : {};
+      o.kids.forEach(function (k) { roll(k, seen); ch.oblig += k.oblig; ch.disb += k.disb; ch.commit += k.commit; ch.total += k.total; ch.n += k.n; if (withTdc) tmap = mergeTdcMaps(tmap, k.byTdc); });
       o.oblig = o._own.oblig + ch.oblig; o.disb = o._own.disb + ch.disb; o.commit = o._own.commit + ch.commit; o.total = o._own.total + ch.total; o.n = o._own.n + ch.n;
+      if (withTdc) { o.byTdc = tmap; o.tdcs = tdcList(tmap); }
       return o;
     }
     var roots = list.filter(function (o) { return o.level === "MSC" || o.id === ST || o.id === UN; });
@@ -2111,11 +2219,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     roots.forEach(function (r) { sk(r.kids); });
     return roots;
   };
+
   G3.unitSelects = function () {
     var st = G3.state, units = G3.data.units || [];
     if (!units.length) return "";
     var mscs = [], bns = [], uics = [], seen = { m: {}, b: {}, u: {} };
     units.forEach(function (u) {
+      if (u.stateRoot || u.level === "State") return;
       if (u.level === "MSC" && !seen.m[u.uic]) { seen.m[u.uic] = 1; mscs.push(u); }
       if ((u.level === "Battalion / Unit" || (u.bn && u.uic === u.bn)) && !seen.b[u.uic]) {
         if (!st.msc || u.msc === st.msc || u.uic === st.msc) { seen.b[u.uic] = 1; bns.push(u); }
@@ -2130,26 +2240,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     function opts(rows, cur, all) {
       return '<option value="">' + all + "</option>" + rows.map(function (u) { return '<option value="' + G3.esc(u.uic) + '"' + (u.uic === cur ? " selected" : "") + ">" + G3.esc(u.name) + " (" + G3.esc(u.uic) + ")</option>"; }).join("");
     }
-    var orders = [], seenO = {};
-    if (G3.data.hasSofDpc && st.fy) {
-      G3.linesFy(st.fy).forEach(function (l) {
-        if (l.src !== "export" || !G3.filterOk(l) || !G3.unitOk(l)) return;
-        var parts = l.dpcParts && l.dpcParts.length ? l.dpcParts : [{ dpc: l.dpc || "" }];
-        parts.forEach(function (p) {
-          var k = G3.util.kn(p.dpc) || G3.NONE_DPC; if (seenO[k]) return; seenO[k] = 1;
-          var inf = p.dpc ? G3.dpcInfo(p.dpc) : null;
-          orders.push({ uic: k, name: p.dpc ? (inf ? inf.name : p.dpc) : G3.NONE_DPC_NAME, code: p.dpc || "" });
-        });
-      });
-      orders.sort(function (a, b) { return a.uic === G3.NONE_DPC ? 1 : b.uic === G3.NONE_DPC ? -1 : a.name.localeCompare(b.name); });
-    }
-    function oopts(rows, cur, all, withCode) {
-      return '<option value="">' + all + "</option>" + rows.map(function (u) { return '<option value="' + G3.esc(u.uic) + '"' + (u.uic === cur ? " selected" : "") + ">" + G3.esc(u.name) + (withCode && u.code ? " (" + G3.esc(u.code) + ")" : (u.uic && u.uic !== G3.NONE_DPC && !u.code ? " (" + G3.esc(u.uic) + ")" : "")) + "</option>"; }).join("");
-    }
     return '<label class="ufl u-msc">MSC<select data-st="msc">' + opts(mscs, st.msc, "All MSCs") + "</select></label>" +
       '<label class="ufl u-bn">Battalion / Unit<select data-st="bn">' + opts(bns, st.bn, "All battalions") + "</select></label>" +
-      '<label class="ufl u-co">Company<select data-st="uic">' + opts(uics, st.uic, "All companies") + "</select></label>" +
-      (orders.length ? '<label class="ufl u-dpc">DPC / Order<select data-st="order">' + oopts(orders, st.order, "All DPCs", true) + "</select></label>" : "");
+      '<label class="ufl u-co">Company<select data-st="uic">' + opts(uics, st.uic, "All companies") + "</select></label>";
   };
   G3.fySel = function () { return '<label>Fiscal year<select data-st="fy">' + G3.data.fys.slice().reverse().map(function (f) { return '<option value="' + f + '"' + (f === G3.state.fy ? " selected" : "") + ">FY" + f + (f === G3.fyOf(G3.asOf()) ? " (current)" : "") + "</option>"; }).join("") + "</select></label>"; };
   G3.scope = function (extra) {
@@ -2323,7 +2416,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (tuu.length) um += '<p><strong>Unmapped UICs</strong> in the Status of Funds export (obligations + disbursements; not on the Units tab, including blank UIC):</p><table class="dtable small tufa"><thead><tr><th>UIC</th><th class="num">$</th><th class="num">Rows</th></tr></thead><tbody>' +
       tuu.map(function (o) { return "<tr><td><code>" + esc(o.uic) + '</code></td><td class="num">' + G3.whole(o.amt) + '</td><td class="num">' + G3.num(o.n) + "</td></tr>"; }).join("") + "</tbody></table>";
     var sr = d.stateRoots || [];
-    if (sr.length) um += "<p><strong>State-level root units</strong> (" + sr.length + ") were left out of the MSC tree so they do not hide battalions and companies. Spending on those UICs is under <em>State / JFHQ (root)</em>, not Unmapped: " + sr.map(function (u) { return "<code>" + esc(u.uic) + "</code> " + esc(u.name); }).join(" &middot; ") + ".</p>";
+    if (sr.length) um += "<p><strong>State-level / root units</strong> (" + sr.length + ", including IA DIV and any name in <code>G3.ROOT_UNITS</code>) were left out of the MSC tree and are never used as parents. Spending on UICs whose only placement is a root row is under <em>State / JFHQ (root)</em>, not Unmapped: " + sr.map(function (u) { return "<code>" + esc(u.uic) + "</code> " + esc(u.name); }).join(" &middot; ") + ".</p>";
+    var dup = d.unitDupes || [];
+    if (dup.length) um += "<p><strong>UICs listed on more than one Units-tab row</strong> (" + dup.length + "). The tree uses the real MSC / battalion / company placement, not an IA DIV or state-root row: " + dup.slice(0, 20).map(function (u) { return "<code>" + esc(u.uic) + "</code> " + esc(u.name) + " (" + u.n + " rows, " + esc(u.used) + ")"; }).join(" &middot; ") + (dup.length > 20 ? " …" : "") + ".</p>";
     var jn = d.sofJoin;
     if (jn && (jn.matched || jn.unmatched)) {
       um += "<p><strong>SOF &times; FMZ3 Order join</strong> (Earmarked Funds = contract_doc_no; $0-open FMZ3 rows are used here, not in Unliquidated): " +
@@ -2399,7 +2494,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
 /* Status of Funds: TDP / AFP / Allotment views, pay group filter, spend by DPC. */
 (function (w) {
   var G3 = w.G3, C = G3.COLORS;
-  var M = G3.mods.sof = { ui: { acct: "", dpcAcct: "IDT", open: {}, openUnit: null, unitSort: "total", unitAsc: false, uicDpcQ: "", uicDpcSort: "total", uicDpcAsc: false } };
+  var M = G3.mods.sof = { ui: { acct: "", dpcAcct: "IDT", open: {}, openUnit: null, unitSort: "total", unitAsc: false } };
 
   function expected(fy, view) {
     if (view !== "tdp") return null;
@@ -2412,7 +2507,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var aOk = function (r) { return !ui.acct || r.account === ui.acct; };
     var lOk = function (r) { return aOk(r) && G3.unitOk(r) && G3.orderOk(r); };
     var L = G3.lines(fy, lOk), F = G3.funding(fy, aOk), T = G3.totals(L, F), exp = expected(fy, st.view);
-    var unitOn = !!(st.msc || st.bn || st.uic || st.order);
+    var unitOn = !!(st.msc || st.bn || st.uic);
     var levelSub = st.view === "tdp" ? "" : G3.pct(T.tdp ? T.level / T.tdp : null, 0) + " of TDP";
     var accts = G3.data.accounts;
     var pc = st.view === "allot" ? null : G3.pace(G3.paceUsed(T), exp && exp.v);
@@ -2493,47 +2588,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     }
     function unitRows(nodes, depth, out) {
       nodes.forEach(function (o) {
-        var dpcKids = (o.level === "UIC" || o.level === "State") && o.dpcs && o.dpcs.length ? o.dpcs : [];
-        var hasOwn = o.level !== "UIC" && o.level !== "DPC" && o._own && o._own.total && (o.kids && o.kids.length);
-        var hasKids = (o.kids && o.kids.length) || dpcKids.length || hasOwn, open = hasKids && unitOpen(o.id), sh = uTot.total ? o.total / uTot.total : 0;
+        var hasKids = !!(o.kids && o.kids.length), open = hasKids && unitOpen(o.id), sh = uTot.total ? o.total / uTot.total : 0;
         out.push(unitRowHtml(o, depth, hasKids, open, sh, o.id === "__unmapped__" ? " unmap" : (o.id === "__state__" ? " state" : ""), lvlBadge(o), o.name, o.uic));
-        if (open) {
-          if (hasOwn) {
-            var hq = { id: o.id + "|HQ", oblig: o._own.oblig, disb: o._own.disb, commit: o._own.commit, total: o._own.total, level: "HQ" };
-            out.push(unitRowHtml(hq, depth + 1, false, false, uTot.total ? hq.total / uTot.total : 0, " lhq", "HQ", "HQ / direct", ""));
-          }
-          if (o.kids && o.kids.length) unitRows(o.kids, depth + 1, out);
-          dpcKids.forEach(function (d) {
-            out.push(unitRowHtml(d, depth + 1, false, false, uTot.total ? d.total / uTot.total : 0, " ldpc", "DPC", d.name, d.code));
-          });
-        }
+        if (open && o.kids && o.kids.length) unitRows(o.kids, depth + 1, out);
       });
       return out;
     }
     var uth = [["name", "Unit"], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"]].concat(uHasCommit ? [["commit", "Commitments", "num"]] : []).concat([["total", "Total", "num"], ["share", "% of spending", "num"]]);
-    h += '<div class="panel" id="unitPanel"><div class="tablehead"><h2>Spending by Unit</h2><span class="muted small">MSC &rarr; Battalion / Unit &rarr; Company, from the Units tab (Hierarchy Level column). Expand a company to see DPC / Order.</span><div class="unitacts"><button class="btn sm" type="button" id="unitExpand">Expand all</button><button class="btn sm ghost" type="button" id="unitCollapse">Collapse all</button><button class="btn sm" type="button" id="unitCsv">Export CSV</button></div></div>';
+    h += '<div class="panel" id="unitPanel"><div class="tablehead"><h2>Spending by Unit</h2><span class="muted small">MSC &rarr; Battalion / Unit &rarr; Company, from the Units tab (Hierarchy Level column). Unit spending by TDC and DPC is on the IDT, AT, Schools, and Mob tabs.</span><div class="unitacts"><button class="btn sm" type="button" id="unitExpand">Expand all</button><button class="btn sm ghost" type="button" id="unitCollapse">Collapse all</button><button class="btn sm" type="button" id="unitCsv">Export CSV</button></div></div>';
     h += '<div class="tablewrap"><table class="grid unit"><thead><tr>' + uth.map(function (c) { return '<th data-k="' + c[0] + '" class="' + (c[2] || "") + (c[0] === (ui.unitSort || "total") ? " sorted" + (ui.unitAsc ? " asc" : "") : "") + '">' + c[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
       (utree.length ? unitRows(utree, 1, []).join("") : '<tr><td colspan="' + uth.length + '" class="muted">No UIC spending to show. Add a Units tab to the master key (with a Hierarchy Level column) and a UIC column to the funds export.</td></tr>') +
       '</tbody><tfoot><tr><td>Total</td><td class="num">' + G3.whole(uTot.oblig) + '</td><td class="num">' + G3.whole(uTot.disb) + "</td>" + (uHasCommit ? '<td class="num">' + G3.whole(uTot.commit) + "</td>" : "") + '<td class="num">' + G3.whole(uTot.total) + '</td><td class="num">100%</td></tr></tfoot></table></div>' +
-      '<p class="hint">Obligations + disbursements from the Status of Funds export, rolled up MSC &rarr; battalion / unit &rarr; company. Click the chevron to drop down a level. A unit with its own spending plus companies shows an <em>HQ / direct</em> line for that spending. % is share of this spending, not of TDP (funding is at the account level). State-level root units are listed under State / JFHQ (root), not as Unmapped UIC.' + (uHasCommit ? " Commitment rows from the commitments report are included when they carry a UIC." : " The commitments report has no UIC column, so upcoming commitments are not in this table.") + "</p></div>";
-    // Combined UIC × DPC table
-    if (hasJoin) {
-      var xd = G3.uicDpcRows(fy, aOk), qxd = (ui.uicDpcQ || "").trim().toLowerCase();
-      if (qxd) xd = xd.filter(function (r) { return (r.uicName + " " + r.uic + " " + r.dpcName + " " + r.dpc + " " + r.tdc + " " + (G3.unitName(r.msc) || r.msc) + " " + (G3.unitName(r.bn) || r.bn)).toLowerCase().indexOf(qxd) >= 0; });
-      var xk = ui.uicDpcSort || "total", xdir = ui.uicDpcAsc ? 1 : -1;
-      xd.sort(function (a, b) {
-        var av = xk === "uic" || xk === "uicName" ? a.uicName : xk === "dpc" || xk === "dpcName" ? a.dpcName : xk === "msc" ? (G3.unitName(a.msc) || a.msc) : (a[xk] || 0);
-        var bv = xk === "uic" || xk === "uicName" ? b.uicName : xk === "dpc" || xk === "dpcName" ? b.dpcName : xk === "msc" ? (G3.unitName(b.msc) || b.msc) : (b[xk] || 0);
-        return (typeof av === "string" ? av.localeCompare(bv) : (av - bv)) * xdir;
-      });
-      var xTot = { oblig: G3.sum(xd, "oblig"), disb: G3.sum(xd, "disb"), total: G3.sum(xd, "total") };
-      var xth = [["uicName", "Company"], ["uic", "UIC", ""], ["msc", "MSC"], ["dpcName", "DPC"], ["dpc", "Order"], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"], ["total", "Total", "num"]];
-      h += '<div class="panel" id="uicDpcPanel"><div class="tablehead"><h2>Spending by Company &times; DPC</h2><span class="muted small">SOF actuals with Order joined from FMZ3</span><label class="ufl u-search grow">Search<input type="search" data-ui="uicDpcQ" value="' + G3.esc(ui.uicDpcQ || "") + '" placeholder="Company, UIC, DPC, order, MSC"></label></div>';
-      h += '<div class="tablewrap"><table class="grid uicdpc"><thead><tr>' + xth.map(function (c) { return '<th data-xk="' + c[0] + '" class="' + (c[2] || "") + (c[0] === xk ? " sorted" + (ui.uicDpcAsc ? " asc" : "") : "") + '">' + c[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
-        (xd.length ? xd.map(function (r) { return "<tr><td><strong>" + G3.esc(r.uicName) + "</strong></td><td><span class=\"uic\">" + G3.esc(r.uic) + "</span></td><td>" + G3.esc(G3.unitName(r.msc) || r.msc || "") + '</td><td class="dsc">' + G3.esc(r.dpcName) + '</td><td>' + (r.dpc ? '<span class="dpc">' + G3.esc(r.dpc) + "</span>" : "") + '</td><td class="num">' + G3.whole(r.oblig) + '</td><td class="num">' + G3.whole(r.disb) + '</td><td class="num"><strong>' + G3.whole(r.total) + "</strong></td></tr>"; }).join("") : '<tr><td colspan="8" class="muted">No company &times; DPC rows for this filter.</td></tr>') +
-        '</tbody><tfoot><tr><td colspan="5">Total (' + xd.length + " rows)</td><td class=\"num\">" + G3.whole(xTot.oblig) + '</td><td class="num">' + G3.whole(xTot.disb) + '</td><td class="num">' + G3.whole(xTot.total) + "</td></tr></tfoot></table></div></div>";
-    }
-
+      '<p class="hint">Obligations + disbursements from the Status of Funds export, rolled up MSC &rarr; battalion / unit &rarr; company. Click the chevron to drop down a level. A parent total includes its own UIC spending plus the units under it (no separate headquarters line). % is share of this spending, not of TDP (funding is at the account level). State-level roots such as IA DIV are left out of the tree; a UIC listed under a root and also under a real unit shows only under the real unit. Spending on UICs whose only placement is a root row is under State / JFHQ (root). Unit spending by TDC and DPC is on the IDT, AT, Schools, and Mob tabs.' + (uHasCommit ? " Commitment rows from the commitments report are included when they carry a UIC." : " The commitments report has no UIC column, so upcoming commitments are not in this table.") + "</p></div>";
     // accounts table
     var cols = [["tdp", "TDP"], ["afp", "AFP"], ["allot", "Allotment"]];
     function trow(t, name, cls, caret) {
@@ -2558,7 +2624,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     h += '</tbody><tfoot><tr><td>Total (' + rows.length + " accounts)</td><td></td><td></td>" + cols.map(function (c) { return '<td class="num">' + G3.whole(TT[c[0]]) + "</td>"; }).join("") + '<td class="num">' + G3.whole(TT.commit) + '</td><td class="num">' + G3.whole(TT.oblig) + '</td><td class="num">' + G3.whole(TT.disb) + '</td><td class="num">' + G3.whole(TT.exec) + '</td><td class="num">' + G3.whole(TT.bal) + '</td><td class="num">' + G3.pct(TT.pctx) + "</td><td></td></tr></tfoot></table></div></div>";
     root.innerHTML = h;
     G3.bindCommon(root, M);
-    G3.$("sofReset").onclick = function () { G3.state.view = "tdp"; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.state.msc = ""; G3.state.bn = ""; G3.state.uic = ""; G3.state.order = ""; ui.acct = ""; ui.open = {}; ui.openUnit = null; ui.uicDpcQ = ""; G3.refresh(); };
+    G3.$("sofReset").onclick = function () { G3.state.view = "tdp"; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.state.msc = ""; G3.state.bn = ""; G3.state.uic = ""; G3.state.order = ""; ui.acct = ""; ui.open = {}; ui.openUnit = null; G3.refresh(); };
     function collectIds(nodes, acc, withDpc) {
       (nodes || []).forEach(function (o) {
         acc.push(o.id); collectIds(o.kids, acc, withDpc);
@@ -2570,15 +2636,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var unitCollapse = G3.$("unitCollapse"); if (unitCollapse) unitCollapse.onclick = function () { ui.openUnit = {}; M.render(); };
     root.querySelectorAll("[data-uopen]").forEach(function (b) { b.onclick = function () { ui.openUnit = ui.openUnit || {}; var k = b.getAttribute("data-uopen"); ui.openUnit[k] = !ui.openUnit[k]; M.render(); }; });
     root.querySelectorAll("#unitPanel th[data-k]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-k"); if (kk === "share") kk = "total"; if (ui.unitSort === kk) ui.unitAsc = !ui.unitAsc; else { ui.unitSort = kk; ui.unitAsc = kk === "name" || kk === "uic"; } M.render(); }; });
-    root.querySelectorAll("#uicDpcPanel th[data-xk]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-xk"); if (ui.uicDpcSort === kk) ui.uicDpcAsc = !ui.uicDpcAsc; else { ui.uicDpcSort = kk; ui.uicDpcAsc = /name|uic|dpc|msc/.test(kk); } M.render(); }; });
     var unitCsv = G3.$("unitCsv"); if (unitCsv) unitCsv.onclick = function () {
       var out = [["Level", "Unit", "UIC / Order", "MSC", "Battalion / Unit", "Obligations", "Disbursements"].concat(uHasCommit ? ["Commitments"] : []).concat(["Total"])];
       (function walk(nodes) {
         (nodes || []).forEach(function (o) {
           out.push([o.level, o.name, o.uic || o.code || "", o.msc, o.bn, o.oblig.toFixed(2), o.disb.toFixed(2)].concat(uHasCommit ? [o.commit.toFixed(2)] : []).concat([o.total.toFixed(2)]));
-          if (o._own && o._own.total && o.kids && o.kids.length) out.push(["HQ / direct", "HQ / direct", "", o.uic, o.bn, o._own.oblig.toFixed(2), o._own.disb.toFixed(2)].concat(uHasCommit ? [o._own.commit.toFixed(2)] : []).concat([o._own.total.toFixed(2)]));
           walk(o.kids);
-          (o.dpcs || []).forEach(function (d) { out.push(["DPC", d.name, d.code || "", o.msc, o.bn, d.oblig.toFixed(2), d.disb.toFixed(2)].concat(uHasCommit ? [d.commit.toFixed(2)] : []).concat([d.total.toFixed(2)])); });
         });
       })(utree);
       G3.csv(out, "G3-Spending-by-Unit-FY" + fy + ".csv");
@@ -2829,13 +2892,68 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
           '</tbody><tfoot><tr><td>Program total</td><td class="num">' + R.dps.length + '</td><td class="num">' + G3.whole(hasJoin ? G3.sum(R.dps, "oblig") + G3.sum(R.dps, "disb") : G3.sum(R.dps, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(R.dps, "commit")) + '</td><td class="num">' + G3.whole(R.dpcTotal) + '</td><td class="num">100%</td><td class="num">' + G3.money(G3.sum(R.dps, "ulo")) + "</td></tr></tfoot></table></div></div>";
       }
       h += "</div>";
-      // Spending by MSC (from the funds export UIC + Units tab)
-      var mscR = (G3.data.hasUnits ? G3.unitRollup(fy, function (x) { return R.accts.indexOf(x.account) >= 0; }) : []).filter(function (o) { return o.total; }), mscT = G3.sum(mscR, "total");
-      if (mscR.length) {
-        h += '<div class="panel"><div class="tablehead"><h2>Spending by MSC</h2><span class="muted small">Obligations + disbursements from the funds export, rolled up from UIC through the unit hierarchy</span></div>' +
-          '<div class="tablewrap"><table class="grid unit"><thead><tr><th>MSC</th><th class="num">Obligations</th><th class="num">Disbursements</th><th class="num">Total</th><th class="num">Share</th></tr></thead><tbody>' +
-          mscR.map(function (o) { var sh = mscT ? o.total / mscT : 0; return "<tr><td><strong>" + G3.esc(o.name) + "</strong>" + (o.uic ? ' <span class="uic">' + G3.esc(o.uic) + "</span>" : "") + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + '</td><td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + "%;background:" + c.color + '"></i></span>' + G3.pct(sh, 0) + "</td></tr>"; }).join("") +
-          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(G3.sum(mscR, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(mscR, "disb")) + '</td><td class="num">' + G3.whole(mscT) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
+      // Unit spending by DPC: MSC > Battalion/Unit > Company, then TDC > DPC (SOF actuals + FMZ3 Order)
+      var utreeAll = G3.data.hasUnits ? G3.unitRollup(fy, function (x) { return R.accts.indexOf(x.account) >= 0; }, { withTdc: !!hasJoin }) : [];
+      (function sortU(nodes) {
+        var k = ui.unitSort || "total", dir = ui.unitAsc ? 1 : -1;
+        (nodes || []).sort(function (a, b) {
+          var av = k === "name" ? a.name : (a[k] || 0), bv = k === "name" ? b.name : (b[k] || 0);
+          return (typeof av === "string" ? av.localeCompare(bv) : (av - bv)) * dir;
+        });
+        (nodes || []).forEach(function (n) { sortU(n.kids); if (n.tdcs) n.tdcs.sort(function (a, b) { return ((b[k] || b.total) - (a[k] || a.total)) * (k === "name" ? -1 : dir); }); });
+      })(utreeAll);
+      var qUnit = (ui.unitQ || "").trim().toLowerCase();
+      function unitMatch(o) {
+        if (!qUnit) return true;
+        var blob = (o.name + " " + (o.uic || "") + " " + (o.code || "") + " " + (o.tdc || "")).toLowerCase();
+        if (blob.indexOf(qUnit) >= 0) return true;
+        if ((o.tdcs || []).some(function (t) {
+          if ((t.tdc || "").toLowerCase().indexOf(qUnit) >= 0) return true;
+          return (t.dpcs || []).some(function (d) { return (d.name + " " + (d.code || "")).toLowerCase().indexOf(qUnit) >= 0; });
+        })) return true;
+        return (o.kids || []).some(unitMatch);
+      }
+      function filterTree(nodes) {
+        if (!qUnit) return nodes || [];
+        return (nodes || []).filter(unitMatch).map(function (o) { var c = Object.assign({}, o); c.kids = filterTree(o.kids || []); return c; });
+      }
+      var utree = filterTree(utreeAll);
+      var uTotU = { oblig: G3.sum(utree, "oblig"), disb: G3.sum(utree, "disb"), total: G3.sum(utree, "total") };
+      if (ui.openUnit == null) { ui.openUnit = {}; utree.forEach(function (r) { if (r.id !== "__unmapped__" && r.id !== "__state__") ui.openUnit[r.id] = true; }); }
+      function uOpen(id) { return !!(ui.openUnit && ui.openUnit[id]); }
+      function lvlClass(o) { return o.level === "MSC" ? "lmsc" : o.level === "Battalion / Unit" ? "lbn" : o.level === "State" ? "lst" : o.level === "TDC" ? "ltdc" : o.level === "DPC" ? "ldpc" : o.id === "__unmapped__" ? "lunmap" : "lco"; }
+      function lvlBadge(o) { return o.level === "MSC" ? "MSC" : o.level === "Battalion / Unit" ? "Unit" : o.level === "State" ? "State" : o.level === "TDC" ? "TDC" : o.level === "DPC" ? "DPC" : o.id === "__unmapped__" ? "—" : "Co"; }
+      function unitRowHtml(o, depth, hasKids, open, sh, extraCls, badge, name, code) {
+        var caret = hasKids ? '<button class="caret" type="button" data-uopen="' + G3.esc(o.id) + '" aria-expanded="' + (open ? "true" : "false") + '" title="' + (open ? "Collapse" : "Expand") + '">' + (open ? "▾" : "▸") + "</button>" : '<span class="caret"></span>';
+        var codeHtml = code ? (o.level === "DPC" ? ' <span class="dpc">' + G3.esc(code) + "</span>" : ' <span class="uic">' + G3.esc(code) + "</span>") : "";
+        return '<tr class="urow l' + depth + " " + lvlClass(o) + (extraCls || "") + (open ? " open" : "") + '"><td class="un">' + caret + '<span class="lvg"></span><span class="lvlb">' + badge + "</span><span class=\"uname\">" + G3.esc(name) + "</span>" + codeHtml + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + "</td>" +
+          '<td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + '%"></i></span>' + G3.pct(sh, 0) + "</td></tr>";
+      }
+      function unitTdcRows(nodes, depth, out) {
+        (nodes || []).forEach(function (o) {
+          var tdcs = o.tdcs || [], hasKids = !!(o.kids && o.kids.length) || tdcs.length, open = hasKids && uOpen(o.id), sh = uTotU.total ? o.total / uTotU.total : 0;
+          out.push(unitRowHtml(o, depth, hasKids, open, sh, o.id === "__unmapped__" ? " unmap" : (o.id === "__state__" ? " state" : ""), lvlBadge(o), o.name, o.uic));
+          if (open) {
+            if (o.kids && o.kids.length) unitTdcRows(o.kids, depth + 1, out);
+            tdcs.forEach(function (t) {
+              var topen = uOpen(t.id), tsh = uTotU.total ? t.total / uTotU.total : 0, hasD = !!(t.dpcs && t.dpcs.length);
+              out.push(unitRowHtml(t, depth + 1, hasD, topen, tsh, "", "TDC", t.tdc, ""));
+              if (topen) (t.dpcs || []).forEach(function (d) {
+                out.push(unitRowHtml(d, depth + 2, false, false, uTotU.total ? d.total / uTotU.total : 0, " ldpc", "DPC", d.name, d.code));
+              });
+            });
+          }
+        });
+        return out;
+      }
+      if (utreeAll.length || (G3.data.hasUnits && hasJoin)) {
+        var uth = [["name", "Unit"], ["oblig", "Obligations", "num"], ["disb", "Disbursements", "num"], ["total", "Total", "num"], ["share", "% of spending", "num"]];
+        h += '<div class="panel unitdpc" id="' + id + 'UnitDpc"><div class="tablehead"><h2>Unit spending by DPC</h2><span class="muted small">SOF obligations + disbursements with Order (DPC) from FMZ3, limited to this program. Expand a unit (MSC, battalion, or company) to see its TDCs, then each DPC by description.</span>' +
+          '<div class="unitacts"><button class="btn sm" type="button" id="' + id + 'UnitExpand">Expand all</button><button class="btn sm ghost" type="button" id="' + id + 'UnitCollapse">Collapse all</button></div></div>' +
+          '<div class="filters"><label class="ufl u-search grow">Search units or DPCs<input type="search" data-ui="unitQ" value="' + G3.esc(ui.unitQ || "") + '" placeholder="Unit, UIC, TDC, DPC"></label></div>';
+        h += '<div class="tablewrap"><table class="grid unit"><thead><tr>' + uth.map(function (col) { return '<th data-uk="' + col[0] + '" class="' + (col[2] || "") + (col[0] === (ui.unitSort || "total") ? " sorted" + (ui.unitAsc ? " asc" : "") : "") + '">' + col[1] + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          (utree.length ? unitTdcRows(utree, 1, []).join("") : '<tr><td colspan="5" class="muted">' + (qUnit ? "No units or DPCs match that search." : "No UIC spending for this program yet.") + "</td></tr>") +
+          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(uTotU.oblig) + '</td><td class="num">' + G3.whole(uTotU.disb) + '</td><td class="num">' + G3.whole(uTotU.total) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
       }
       // DPC detail
       if (!noDpc && R.dps.length) {
@@ -2851,10 +2969,18 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         old.map(function (u) { return "<tr" + (u.days > 180 ? ' class="red"' : u.days > 90 ? ' class="amber"' : "") + '><td>' + G3.ciPill(u.type) + '</td><td class="wrapc">' + G3.esc(u.desc) + '</td><td class="wrapc small">' + G3.esc(G3.dpcName(u.order) || u.order) + '</td><td class="num"><span class="agepill" style="--bc:' + G3.mods.ulo.BCOL[u.b] + '">' + u.days + 'd</span></td><td class="num"><strong>' + G3.whole(u.open) + "</strong></td></tr>"; }).join("") + (old.length ? "" : '<tr><td colspan="5" class="muted">Nothing open.</td></tr>') + "</tbody></table></div></div></div>";
       root.innerHTML = h;
       G3.bindCommon(root, M);
-      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
+      G3.$(id + "Reset").onclick = function () { ui.mode = "monthly"; ui.tdc = ""; ui.openUnit = null; ui.unitQ = ""; G3.state.pg = "All"; G3.state.fund = "All"; G3.state.appr = "All"; G3.refresh(); };
       root.querySelectorAll("tr.tdcr").forEach(function (tr) { tr.onclick = function () { var t = tr.getAttribute("data-tdc"); ui.tdc = ui.tdc === t ? "" : t; M.render(); }; });
       var all = G3.$(id + "AllTdc"); if (all) all.onclick = function () { ui.tdc = ""; M.render(); };
       G3.$(id + "Ulo").onclick = function () { G3.mods.ulo.ui.page = 0; G3.go("ulo"); };
+      function collectUnitIds(nodes, acc) {
+        (nodes || []).forEach(function (o) { acc.push(o.id); collectUnitIds(o.kids, acc); });
+        return acc;
+      }
+      var ux = G3.$(id + "UnitExpand"); if (ux) ux.onclick = function () { ui.openUnit = {}; collectUnitIds(utree, []).forEach(function (k) { ui.openUnit[k] = true; }); M.render(); };
+      var uc = G3.$(id + "UnitCollapse"); if (uc) uc.onclick = function () { ui.openUnit = {}; M.render(); };
+      root.querySelectorAll("#" + id + "UnitDpc [data-uopen]").forEach(function (b) { b.onclick = function () { ui.openUnit = ui.openUnit || {}; var k = b.getAttribute("data-uopen"); ui.openUnit[k] = !ui.openUnit[k]; M.render(); }; });
+      root.querySelectorAll("#" + id + "UnitDpc th[data-uk]").forEach(function (th) { th.onclick = function () { var kk = th.getAttribute("data-uk"); if (kk === "share") kk = "total"; if (ui.unitSort === kk) ui.unitAsc = !ui.unitAsc; else { ui.unitSort = kk; ui.unitAsc = kk === "name"; } M.render(); }; });
       // charts
       if (!noDpc && R.tdcs.length) G3.chart("c" + id + "Tdc", { type: "bar", data: { labels: R.tdcs.map(function (t) { return t.tdc; }), datasets: [{ label: hasJoin ? "Actuals" : "Obligations", data: R.tdcs.map(function (t) { return hasJoin ? t.oblig + (t.disb || 0) : t.oblig; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length]; }), stack: "t", borderRadius: 4 }, { label: "Commitments", data: R.tdcs.map(function (t) { return t.commit; }), backgroundColor: R.tdcs.map(function (t, i) { return TDCCOL[i % TDCCOL.length] + "66"; }), stack: "t", borderRadius: 4 }] },
         options: { indexAxis: "y", onClick: function (e, el2) { if (el2.length) { var t = R.tdcs[el2[0].index].tdc; ui.tdc = ui.tdc === t ? "" : t; M.render(); } }, scales: { x: Object.assign({ stacked: true }, G3.axMoney), y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } } }, plugins: { tooltip: G3.tipMoney, legend: { labels: { generateLabels: function () { return [{ text: (hasJoin ? "Actuals" : "Obligations") + " (solid)", fillStyle: "#64748b", strokeStyle: "#64748b", pointStyle: "circle" }, { text: "Commitments (light)", fillStyle: "#cbd5e1", strokeStyle: "#cbd5e1", pointStyle: "circle" }]; } } } } } });
