@@ -99,3 +99,15 @@ td.cic{white-space:nowrap}
 .wrap.wide{max-width:1760px}
 #page-sof table.acct th,#page-sof table.acct td{padding-left:8px;padding-right:8px}
 #page-sof table.acct td:first-child{white-space:normal;min-width:150px}
+
+/* Spending by Unit (Status of Funds) */
+table.unit td.un{white-space:normal;min-width:220px}
+table.unit .caret{border:0;background:none;cursor:pointer;color:var(--muted);width:20px;padding:0;font-size:.9rem;margin-right:2px}
+table.unit tr.l2 td.un{padding-left:28px}
+table.unit tr.l3 td.un{padding-left:52px}
+table.unit .uname{font-weight:650}
+table.unit .uic{font-size:.72rem;color:var(--soft);font-family:ui-monospace,Menlo,monospace;margin-left:6px;white-space:nowrap}
+table.unit tr.unmap .uname{color:var(--muted);font-style:italic}
+.hacc.hunit{margin-top:14px}
+.hacc.hunit .fi{background:#2563eb}
+#unitPanel .tablehead{gap:10px}

@@ -5,7 +5,7 @@
   G3.PAGES = ["home", "sof", "spend", "ulo", "idt", "at", "sch", "mob"];
   G3.TITLE = { home: "Home", sof: "Status of Funds", spend: "Spend Plans", ulo: "Unliquidated", idt: "IDT", at: "Annual Training", sch: "Schools", mob: "Mobilization" };
   G3.mods = {};
-  G3.state = { fy: null, pg: "All", view: "tdp" };
+  G3.state = { fy: null, pg: "All", view: "tdp", msc: "", bn: "", uic: "" };
   G3.charts = {};
   G3.COLORS = { commit: "#f59e0b", oblig: "#3b82f6", disb: "#84cc16", remain: "#e2e8f0", tdp: "#b08968", afp: "#c9a227", allot: "#0ea5e9", plan: "#94a3b8", prior: "#cbd5e1" };
   G3.PGCOL = { "10010": "#2563eb", "10070": "#0d9488", "10080": "#7c3aed", "10090": "#ea580c" };
@@ -134,8 +134,102 @@
     });
     return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.total - a.total; });
   };
+  // UIC filters: empty = all. A line without a mapped UIC only passes when every unit filter is off.
+  G3.unitOk = function (l) {
+    var st = G3.state;
+    if (!st.msc && !st.bn && !st.uic) return true;
+    if (st.uic) return (l.uicKey || "") === st.uic || G3.util.uk(l.uic) === st.uic;
+    if (st.bn) return (l.bn || "") === st.bn || (l.uicKey || "") === st.bn;
+    return (l.msc || "") === st.msc || (l.uicKey || "") === st.msc;
+  };
+  G3.unitInfo = function (code) {
+    var k = G3.util.uk(code); return (G3.data.unitBy && (G3.data.unitBy[k] || (k.length > 6 && G3.data.unitBy[k.slice(0, 6)]))) || null;
+  };
+  G3.unitName = function (code) { var u = G3.unitInfo(code); return u ? u.name : ""; };
+  // Spending by unit from the funds export (obligations + disbursements). Commitments are included only when that report has a UIC column.
+  G3.unitRollup = function (fy, filter) {
+    var st = G3.state, incCommit = !!G3.data.commitHasUic;
+    var lines = G3.linesFy(fy).filter(function (l) {
+      if (l.src === "commit") { if (!incCommit || !l.uic) return false; }
+      else if (l.src !== "export") return false;
+      return G3.pgOk(l.pg) && G3.unitOk(l) && (!filter || filter(l));
+    });
+    var by = {}, UN = "__unmapped__";
+    function node(id, meta) {
+      return by[id] || (by[id] = { id: id, uic: meta.uic || "", name: meta.name, level: meta.level, parent: meta.parent || "", msc: meta.msc || "", bn: meta.bn || "", oblig: 0, disb: 0, commit: 0, total: 0, n: 0, kids: [] });
+    }
+    (G3.data.units || []).forEach(function (u) { node(u.uic, { uic: u.uic, name: u.name, level: u.level, parent: u.parent, msc: u.msc, bn: u.bn }); });
+    var un = node(UN, { uic: "", name: "Unmapped UIC", level: "MSC", parent: "", msc: "", bn: "" });
+    lines.forEach(function (l) {
+      var o;
+      if (l.uicKey && by[l.uicKey]) o = by[l.uicKey];
+      else if (l.uic) {
+        var kid = "U:" + G3.util.uk(l.uic);
+        o = by[kid] || node(kid, { uic: G3.util.uk(l.uic), name: l.uic, level: "UIC", parent: UN, msc: "", bn: "" });
+      } else o = un;
+      o.oblig += l.oblig || 0; o.disb += l.disb || 0; o.commit += l.commit || 0; o.total += (l.oblig || 0) + (l.disb || 0) + (l.commit || 0); o.n++;
+    });
+    var list = Object.keys(by).map(function (k) { return by[k]; });
+    list.forEach(function (o) { o._own = { oblig: o.oblig, disb: o.disb, commit: o.commit, total: o.total, n: o.n }; o.kids = []; });
+    list.forEach(function (o) {
+      if (o.id === UN) return;
+      if (o.parent && by[o.parent]) by[o.parent].kids.push(o);
+      else if (o.level !== "MSC" && o.msc && by[o.msc] && o.msc !== o.uic) by[o.msc].kids.push(o);
+      else if (o.level !== "MSC") un.kids.push(o);
+    });
+    function roll(o, seen) {
+      seen = seen || {}; if (seen[o.id]) return o; seen[o.id] = 1;
+      var ch = { oblig: 0, disb: 0, commit: 0, total: 0, n: 0 };
+      o.kids.forEach(function (k) { roll(k, seen); ch.oblig += k.oblig; ch.disb += k.disb; ch.commit += k.commit; ch.total += k.total; ch.n += k.n; });
+      o.oblig = o._own.oblig + ch.oblig; o.disb = o._own.disb + ch.disb; o.commit = o._own.commit + ch.commit; o.total = o._own.total + ch.total; o.n = o._own.n + ch.n;
+      return o;
+    }
+    var roots = list.filter(function (o) { return o.level === "MSC" || o.id === UN; });
+    roots.forEach(function (r) { roll(r); });
+    function keep(o) {
+      o.kids = o.kids.filter(keep);
+      if (st.uic) return o.uic === st.uic || o.kids.length;
+      if (st.bn) return o.uic === st.bn || o.bn === st.bn || o.kids.length;
+      if (st.msc) return o.uic === st.msc || o.msc === st.msc || o.kids.length;
+      return o.total || o.kids.length;
+    }
+    roots = roots.filter(keep);
+    roots.sort(function (a, b) { return a.id === UN ? 1 : b.id === UN ? -1 : b.total - a.total; });
+    function sk(kids) { kids.sort(function (a, b) { return b.total - a.total; }); kids.forEach(function (k) { sk(k.kids); }); }
+    roots.forEach(function (r) { sk(r.kids); });
+    return roots;
+  };
+  G3.unitSelects = function () {
+    var st = G3.state, units = G3.data.units || [];
+    if (!units.length) return "";
+    var mscs = [], bns = [], uics = [], seen = { m: {}, b: {}, u: {} };
+    units.forEach(function (u) {
+      if (u.level === "MSC" && !seen.m[u.uic]) { seen.m[u.uic] = 1; mscs.push(u); }
+      if ((u.level === "Battalion / Unit" || (u.bn && u.uic === u.bn)) && !seen.b[u.uic]) {
+        if (!st.msc || u.msc === st.msc || u.uic === st.msc) { seen.b[u.uic] = 1; bns.push(u); }
+      }
+      if (!seen.u[u.uic]) {
+        if ((!st.msc || u.msc === st.msc || u.uic === st.msc) && (!st.bn || u.bn === st.bn || u.uic === st.bn)) { seen.u[u.uic] = 1; uics.push(u); }
+      }
+    });
+    mscs.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    bns.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    uics.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    function opts(rows, cur, all) {
+      return '<option value="">' + all + "</option>" + rows.map(function (u) { return '<option value="' + G3.esc(u.uic) + '"' + (u.uic === cur ? " selected" : "") + ">" + G3.esc(u.name) + " (" + G3.esc(u.uic) + ")</option>"; }).join("");
+    }
+    return '<label>MSC<select data-st="msc">' + opts(mscs, st.msc, "All MSCs") + "</select></label>" +
+      '<label>Battalion / Unit<select data-st="bn">' + opts(bns, st.bn, "All battalions") + "</select></label>" +
+      '<label>UIC<select data-st="uic">' + opts(uics, st.uic, "All UICs") + "</select></label>";
+  };
   G3.fySel = function () { return '<label>Fiscal year<select data-st="fy">' + G3.data.fys.slice().reverse().map(function (f) { return '<option value="' + f + '"' + (f === G3.state.fy ? " selected" : "") + ">FY" + f + (f === G3.fyOf(G3.asOf()) ? " (current)" : "") + "</option>"; }).join("") + "</select></label>"; };
-  G3.scope = function (extra) { return "<strong>FY" + G3.state.fy + "</strong> &middot; " + (G3.state.pg === "All" ? "All pay groups" : "Pay group " + G3.state.pg) + (extra ? " &middot; " + extra : ""); };
+  G3.scope = function (extra) {
+    var st = G3.state, u = [];
+    if (st.msc) u.push(G3.unitName(st.msc) || st.msc);
+    if (st.bn) u.push(G3.unitName(st.bn) || st.bn);
+    if (st.uic) u.push(G3.unitName(st.uic) || st.uic);
+    return "<strong>FY" + st.fy + "</strong> &middot; " + (st.pg === "All" ? "All pay groups" : "Pay group " + st.pg) + (u.length ? " &middot; " + G3.esc(u.join(" / ")) : "") + (extra ? " &middot; " + extra : "");
+  };
   G3.testTag = function () { return G3.data.source === "test" ? '<span class="demotag">Test data</span>' : ""; };
   G3.head = function (id, icon, title, scope) {
     return '<div class="pagehead"><div><h1><span class="pic t-' + id + '"><svg class="ic"><use href="#' + icon + '"/></svg></span>' + title + G3.testTag() + '</h1><div class="asofp">' + (G3.data.asOf ? "Data as of " + G3.dateText(G3.data.asOf) : "") + '</div><div class="scope">' + scope + '</div></div><button class="btn ghost" type="button" data-go="home"><svg class="ic"><use href="#i-home"/></svg>Home</button></div>';
@@ -148,7 +242,12 @@
         if (name in G3.state) { G3.state[name] = v; G3.refresh(); } else { mod.ui[name] = v; mod.render(); }
       });
     });
-    root.querySelectorAll("select[data-st]").forEach(function (s) { s.addEventListener("change", function () { G3.state[s.getAttribute("data-st")] = s.value; G3.refresh(); }); });
+    root.querySelectorAll("select[data-st]").forEach(function (s) { s.addEventListener("change", function () {
+      var k = s.getAttribute("data-st"); G3.state[k] = s.value;
+      if (k === "msc") { G3.state.bn = ""; G3.state.uic = ""; }
+      if (k === "bn") G3.state.uic = "";
+      G3.refresh();
+    }); });
     root.querySelectorAll("select[data-ui],input[data-ui]").forEach(function (s) {
       var tmr;
       s.addEventListener(s.tagName === "INPUT" ? "input" : "change", function () {
@@ -279,15 +378,19 @@
           (dg.byFy && Object.keys(dg.byFy).length ? '<br><span class="muted">by fiscal year: ' + Object.keys(dg.byFy).sort().map(function (f) { return "FY" + esc(f) + " " + G3.money(dg.byFy[f]); }).join(" &middot; ") + "</span>" : "") +
           (k === "export" ? '<br><span class="muted">monthly actuals (Spend Plans / trends) through ' + (dg.lastFm ? G3.MONTHS[dg.lastFm - 1] + " (month " + dg.lastFm + ") of FY" + esc(d.wfy) : "no month") + "</span>" + (dg.noMonth ? ' &middot; <span class="warn">' + G3.whole(dg.noMonth) + " on lines with no readable fiscal month (in totals, not in any month)</span>" : "") : "") +
           (k === "plan" && d.planFy ? '<br><span class="muted">compared against FY' + esc(d.planFy.join(", FY")) + "</span>" : "") +
-          (k === "export" && d.faPrefix ? '<br><span class="muted">' + G3.num(d.faPrefix) + " rows matched an Accounts-tab Functional Area by its first characters</span>" : "") + "</span>");
+          (k === "export" && d.faPrefix ? '<br><span class="muted">' + G3.num(d.faPrefix) + " rows matched an Accounts-tab Functional Area by its first characters</span>" : "") +
+          (k === "export" && dg.uicUnmapped ? '<br><span class="warn">' + G3.whole(dg.uicUnmapped) + " of obligations + disbursements have a UIC not on the Units tab</span>" : "") + "</span>");
       }
       return "<tr><td><strong>" + G3.KIND_LABEL[k] + "</strong></td><td>" + esc(s.name) + (s.sheet && s.sheet !== "Sheet1" ? ' <span class="muted">(' + esc(s.sheet) + " tab)</span>" : "") + '</td><td class="num">' + G3.num(s.rows.length) + '</td><td class="small">' + notes.join("<br>") + "</td></tr>";
     }).join("");
-    var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["commitFa", "Functional Areas on commitments-report rows that matched neither the DPC tab nor the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"], ["ci", "Commitment items (export / FMZ3) missing from the Commitment Item tab"]];
+    var u = d.unmapped || {}, lists = [["fa", "Functional Areas in the Status of Funds export missing from the Accounts tab"], ["fmzFa", "Functional Areas in FMZ3 missing from the Accounts tab"], ["commitFa", "Functional Areas on commitments-report rows that matched neither the DPC tab nor the Accounts tab"], ["dpc", "Internal Orders (DPCs) in the commitments report missing from the DPC tab"], ["prio", "Prioritizations in the spend plan missing from the Spend Plan tab"], ["ci", "Commitment items (export / FMZ3) missing from the Commitment Item tab"], ["uic", "UICs in the Status of Funds export missing from the Units tab"]];
     var um = lists.filter(function (l) { return u[l[0]] && Object.keys(u[l[0]]).length; }).map(function (l) { return "<p><strong>" + l[1] + ":</strong> " + Object.keys(u[l[0]]).map(function (x) { return "<code>" + esc(x) + "</code> (" + u[l[0]][x] + ")"; }).join(" ") + "</p>"; }).join("");
     var tuf = d.topUnmappedFa || []; if (!um && !tuf.length) um = '<p class="ok">Everything maps.</p>';
     if (tuf.length) um = '<p><strong>Top unmapped Functional Areas</strong> (by $; closest Functional Area on your key in the last column):</p><table class="dtable small tufa"><thead><tr><th>Functional Area</th><th class="num">$</th><th class="num">Rows</th><th>Where</th><th>Closest key FA &rarr; account</th></tr></thead><tbody>' +
       tuf.map(function (o) { return "<tr><td><code>" + esc(o.fa) + '</code></td><td class="num">' + G3.whole(o.amt) + '</td><td class="num">' + G3.num(o.n) + "</td><td>" + esc(o.ds.join(", ")) + "</td><td>" + (o.closest ? "<code>" + esc(o.closest.fa) + "</code> &rarr; " + esc(o.closest.account || "") + ' <span class="muted">(first ' + o.closest.shared + " characters match)</span>" : '<span class="muted">none</span>') + "</td></tr>"; }).join("") + "</tbody></table>" + um;
+    var tuu = d.topUnmappedUic || [];
+    if (tuu.length) um += '<p><strong>Unmapped UICs</strong> in the Status of Funds export (obligations + disbursements; not on the Units tab, including blank UIC):</p><table class="dtable small tufa"><thead><tr><th>UIC</th><th class="num">$</th><th class="num">Rows</th></tr></thead><tbody>' +
+      tuu.map(function (o) { return "<tr><td><code>" + esc(o.uic) + '</code></td><td class="num">' + G3.whole(o.amt) + '</td><td class="num">' + G3.num(o.n) + "</td></tr>"; }).join("") + "</tbody></table>";
     var fh = d.faHow || {}, fhs = Object.keys(fh).map(function (ds) { var o = fh[ds]; return "<strong>" + esc(G3.KIND_LABEL[ds] || ds) + ":</strong> " + [["exact", "exact FA"], ["prefix", "key FA is the start of the FA"], ["reverse", "FA is the start of a key FA"], ["dpc", "Internal Order (DPC tab)"], ["acct", "report Account column"]].filter(function (x) { return o[x[0]]; }).map(function (x) { return G3.num(o[x[0]]) + " " + x[1]; }).join(", "); });
     if (fhs.length) um = '<p class="muted">How rows mapped to an account &mdash; ' + fhs.join(" &middot; ") + "</p>" + um;
     G3.$("dUnmapped").innerHTML = um || '<p class="ok">Everything maps.</p>';
@@ -302,7 +405,7 @@
     G3.$("dUnmapped").innerHTML += "<p><strong>Account pay groups</strong> (first 5 digits of each account\u2019s Functional Areas): " + (d.accounts || []).filter(function (a) { return a.id !== "Unmapped"; }).map(function (a) { return esc(a.name) + " <code>" + (d.acctPg[a.id] || "none") + "</code>"; }).join(" &middot; ") + "</p>" +
       (cfl.length ? '<p class="warn"><strong>Key conflicts:</strong> ' + cfl.map(function (x) { return esc(x.name) + " has Functional Areas in " + x.pgs.map(function (p) { return p || "no pay group (131\u2026)"; }).join(" and ") + "; counted under " + (x.used || "no pay group"); }).join("; ") + ".</p>" : "");
     G3.$("dPrograms").innerHTML = "<p>Accounts feeding each program tab (edit <code>G3.PROGRAM_ACCOUNTS</code> at the top of loaders.js):</p>" + ["idt", "at", "sch", "mob"].map(function (p) { var acc = (d.accounts || []).filter(function (a) { return a.program === p; }).map(function (a) { return a.name; }); return "<p><strong>" + G3.PROGRAMS[p].title + ":</strong> " + (acc.length ? acc.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") : '<span class="warn">no account matched</span>') + ' <span class="muted">(matches ' + G3.PROGRAM_ACCOUNTS[p].join(", ") + ")</span></p>"; }).join("");
-    G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC, Spend Plan and Commitment Item tabs, or separate files.</p>';
+    G3.$("dSchema").innerHTML = G3.KIND_ORDER.map(function (k) { return "<p><strong>" + G3.KIND_LABEL[k] + ":</strong> " + esc(G3.DATASET_COLS[k]) + "</p>"; }).join("") + '<p class="muted">Files are recognised by their header row, not their name. The Master Key can be one workbook with Funding, Accounts, DPC, Spend Plan, Commitment Item, Units and Hierarchy Level tabs, or separate files.</p>';
   }
   G3.renderDrawer = renderDrawer;
   var tt;

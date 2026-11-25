@@ -123,7 +123,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   // partial upload replaces only its dataset
   const before = await p.evaluate(() => G3.data.sets.commit.at);
   await p.setInputFiles('#fileInput', [path.join(__dirname, 'samples', 'FMZ3 Unliquidated.xlsx')]); await p.waitForTimeout(1200);
-  ok(await p.evaluate(b => G3.data.sets.commit.at === b && Object.keys(G3.data.sets).length === 9, before), 'partial upload (FMZ3 only) left other datasets in place');
+  ok(await p.evaluate(b => G3.data.sets.commit.at === b && Object.keys(G3.data.sets).length === 11, before), 'partial upload (FMZ3 only) left other datasets in place');
   for (const t of ['home', 'sof', 'spend', 'ulo', 'idt', 'at', 'sch', 'mob']) { await p.evaluate(t => G3.go(t), t); await p.waitForTimeout(250); }
   // save with data round trip
   const [dl] = await Promise.all([p.waitForEvent('download'), p.evaluate(() => document.getElementById('btnSave').click())]);
@@ -181,8 +181,8 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   const gx = await p4.evaluate(() => { const r = G3.data.sets.export.report; location.hash = '#/spend'; G3.refresh(); const k = [...document.querySelectorAll('#page-spend .kpi .val')].map(x => x.textContent);
     return { notes: r.notes, ign: r.ignoredCols, rows: G3.data.sets.export.rows.length, unm: G3.data.diag.export.unmapped, noMonth: G3.data.diag.export.noMonth, kpis: k, sets: Object.keys(G3.data.sets).length }; });
   console.log(JSON.stringify({ F0, F1, gx }, null, 1));
-  ok(gx.rows === 637 && gx.unm === 0 && gx.noMonth === 0 && /"fiscal_month"/.test(gx.notes.join(' ')) && /"commitment_amt_cum"/.test(gx.notes.join(' ')), "Cole's full GFEBS header (111 columns): reads contract_doc_no, commitment_item_fipex, functional_area_farea, appropriation_type, fiscal_year, fiscal_month, commitment_amt_cum, disbursement_amt_cum; ignores " + gx.ign + ' others; 637 rows, $0 unmapped, every line has a month');
-  ok(F1.od === F0.od && F1.tdp === F0.tdp && F1.prog === F0.prog && F1.ulo === F0.ulo && gx.sets === 9, 'GFEBS export: Status of Funds, program tabs and Unliquidated match the test data (look-alike columns fiscal_period / obligation_amt_cum / fiscal_year_gjahr not read)');
+  ok(gx.rows === 637 && gx.unm === 0 && gx.noMonth === 0 && /"fiscal_month"/.test(gx.notes.join(' ')) && /"commitment_amt_cum"/.test(gx.notes.join(' ')) && /unit_identification_code/.test(gx.notes.join(' ')) && !/organizational_unique_identifier/.test(gx.notes.join(' ')), "Cole's full GFEBS header (111 columns): reads Aviation/G1 columns plus unit_identification_code_|_uic (not OUID); ignores " + gx.ign + ' others; 637 rows, $0 unmapped, every line has a month');
+  ok(F1.od === F0.od && F1.tdp === F0.tdp && F1.prog === F0.prog && F1.ulo === F0.ulo && gx.sets === 11, 'GFEBS export: Status of Funds, program tabs and Unliquidated match the test data (look-alike columns fiscal_period / obligation_amt_cum / fiscal_year_gjahr not read)');
   ok(F1.pTD === F0.pTD && F1.aTD === F0.aTD && F1.pTD > 0 && F1.aTD > 0 && F1.aTD10 > 0 && F1.acts >= 4 && gx.kpis.every(v => v !== '$0'), 'Spend Plans populate from the GFEBS export: planned to date ' + F1.pTD + ', actual ' + F1.aTD + ' through month ' + F1.cur + ' (10010 actual ' + F1.aTD10 + ')');
   // Aviation/G1 spend plan layout (Account + date month headers) also loads
   await p4.setInputFiles('#fileInput', [path.join(gdir, 'Spend plan (Account layout).xlsx')]); await p4.waitForTimeout(1200);
@@ -229,6 +229,54 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   console.log(JSON.stringify(kj));
   ok(kj.same && kj.unm === 0 && kj.idtPlan > 0 && kj.idtSpent > 0 && kj.idtTdp > 0, 'Spend Plan tab accounts in different case / spacing / hidden characters still join: prioritization -> account <- Functional Area / funding (IDT plan ' + kj.idtPlan + ', spent ' + kj.idtSpent + ')');
   ok(kj.cross && kj.miss.join(',') === 'ORPHAN ACCT:Funding/Accounts/Spend Plan', 'account cross-check lists accounts missing from other key tabs (' + kj.miss.join(',') + ')');
+  // ---- UIC / Spending by Unit: Units + Hierarchy Level tabs, GFEBS UIC column, rollups, unmapped, filters ----
+  const pU = await ctx.newPage(); pU.on('pageerror', e => errs.push(e.message));
+  await pU.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await pU.waitForTimeout(700);
+  const ur = await pU.evaluate(() => {
+    const fy = G3.state.fy;
+    const ex = G3.data.lines.filter(l => l.src === 'export' && l.fy === fy);
+    const od = (l) => (l.oblig || 0) + (l.disb || 0);
+    const tree = G3.unitRollup(fy);
+    const sumT = (nodes) => nodes.reduce((s, n) => s + n.total, 0);
+    function kidsOk(n) {
+      const child = n.kids.reduce((s, k) => s + k.total, 0);
+      const own = n._own ? n._own.total : 0;
+      return Math.abs((own + child) - n.total) < 0.05 && n.kids.every(kidsOk);
+    }
+    const w8 = ex.filter(l => l.uicKey === 'W8AQ0B' || /^W8AQ0B/i.test(l.uic || ''));
+    const suff = ex.filter(l => /01$/i.test(l.uic || '') && G3.util.uk(l.uic).length > 6);
+    const un = ex.filter(l => !l.uicKey);
+    const mscAM = tree.find(n => n.uic === 'W8AMAA');
+    const bn133 = mscAM && mscAM.kids.find(n => n.uic === 'W8AQAA');
+    G3.state.msc = 'W8AMAA'; const tAM = G3.unitRollup(fy); G3.state.msc = '';
+    G3.renderDrawer(); const um = document.getElementById('dUnmapped').innerHTML;
+    const panel = !!document.getElementById('unitPanel');
+    const uicNote = (G3.data.sets.commit.report.notes || []).join(' ');
+    const named = G3.unitName('W8AMAA');
+    const levels = (G3.data.unitLevels || []).join('>');
+    const mscFromUic = (G3.data.unitBy.W8AQ0B || {}).mscName || (G3.data.unitBy.W8AQ0B || {}).msc;
+    return {
+      hasUnits: G3.data.hasUnits, nUnits: (G3.data.units || []).length, nEx: ex.length, nUic: ex.filter(l => l.uic).length,
+      named, levels, mscFromUic,
+      suffN: suff.length, suffMapped: suff.filter(l => l.uicKey === G3.util.uk(l.uic).slice(0, 6)).length,
+      treeN: tree.length, treeSum: Math.round(sumT(tree) * 100) / 100, exSum: Math.round(ex.reduce((s, l) => s + od(l), 0) * 100) / 100,
+      kidsOk: tree.every(kidsOk), hasAM: !!mscAM, has133: !!bn133,
+      unN: un.length, unAmt: Math.round(un.reduce((s, l) => s + od(l), 0)),
+      hasUnTable: /Unmapped UICs/.test(um) && /W9UNKN/i.test(um),
+      commitNoUic: /No UIC column/.test(uicNote),
+      filterAM: tAM.length === 1 && tAM[0].uic === 'W8AMAA' && Math.abs(tAM[0].total - (mscAM ? mscAM.total : -1)) < 0.05,
+      panel, sets: ['unitkey', 'hierkey'].every(k => G3.data.sets[k]),
+      decoy: ex.every(l => l.uic !== 'OUID' && !(l.uic || '').startsWith('OUID'))
+    };
+  });
+  console.log(JSON.stringify(ur));
+  ok(ur.hasUnits && ur.sets && ur.nUnits >= 15 && ur.nUic === ur.nEx, 'Units and Hierarchy Level tabs load; every SOF export row carries a UIC (' + ur.nUic + ' rows, ' + ur.nUnits + ' units)');
+  ok(ur.named === '2nd Brigade, 34th Infantry Division' && /MSC/.test(ur.levels) && /Battalion/.test(ur.levels) && ur.mscFromUic && /2nd Brigade|W8AMAA/.test(String(ur.mscFromUic)), 'Hierarchy is MSC > Battalion/Unit > UIC; MSC/battalion UICs resolve to unit names (' + ur.named + ', levels ' + ur.levels + ')');
+  ok(ur.suffN > 0 && ur.suffMapped === ur.suffN && ur.decoy, 'Suffixed UICs (e.g. W8AQ0B01) map to the 6-character base; OUID is not read as UIC');
+  ok(ur.kidsOk && ur.hasAM && ur.has133 && Math.abs(ur.treeSum - ur.exSum) < 0.05 && ur.exSum > 0, 'Unit rollups add up: children + own = parent, and all MSCs + unmapped = export obligations + disbursements (' + ur.treeSum + ')');
+  ok(ur.unN > 0 && ur.hasUnTable && ur.unAmt > 0, 'Unmapped UIC W9UNKN is grouped and listed in Data details with dollars ($' + ur.unAmt + ', ' + ur.unN + ' rows)');
+  ok(ur.commitNoUic && ur.filterAM && ur.panel, 'Commitments report (no UIC) is noted and left out of Spending by Unit; MSC filter narrows the tree to 2-34 IBCT; the SOF section is on the page');
+
   // ---- Status of Funds accounts table fits without a horizontal scroll bar at 1920 and 1600 ----
   const fit = [];
   for (const w of [1920, 1600]) { const pw = await ctx.newPage(); await pw.setViewportSize({ width: w, height: 1000 }); await pw.goto('file://' + __dirname + '/g3-dashboard.html#/sof'); await pw.waitForTimeout(600);

@@ -18,6 +18,9 @@ One **Upload data** button takes any mix of files; each is recognised by its hea
 | Master Key – DPC | DPC/Internal Order + Description (+ TDC) | DPC, Description, Account, TDC |
 | Master Key – Spend Plan | Prioritization + Account (no months) | |
 | Master Key – Commitment Item | Commitment Item + Description (no DPC/Account) | descriptions shown wherever commitment items appear |
+| Master Key – Units | UIC, Unit Name, MSC, Battalion/Unit | unit names and the MSC → battalion → UIC tree |
+| Master Key – Hierarchy Level | Hierarchy Level and/or UIC + Parent UIC, optional Order | level order (MSC highest, then Battalion/Unit, then UIC); UIC-to-parent rows build the tree when present |
+| Status of Funds export (UIC) | `unit_identification_code_|_uic` (or any UIC header; not OUID) | spending by unit on Status of Funds |
 | Commitments (checkbook drill down) | Entry Type + Amount + Internal Order | Pay Group, Internal Order, Entry Type, Amount (sign flipped). Commitment rows count in TDP execution; Obligation rows feed spending-by-DPC only |
 | FMZ3 | Earmarked Funds + Amount Open (TC) | open/total, Posting Date, Earmarked Funds (FMZ #), Functional Area, Commitment item, Document Header Text (traveler cleanup); zero-open rows dropped |
 | Spend plan | Prioritization + month columns | Prioritization, October–September |

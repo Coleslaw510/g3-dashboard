@@ -54,6 +54,14 @@
           '</tbody><tfoot><tr><td>Program total</td><td class="num">' + R.dps.length + '</td><td class="num">' + G3.whole(G3.sum(R.dps, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(R.dps, "commit")) + '</td><td class="num">' + G3.whole(R.dpcTotal) + '</td><td class="num">100%</td><td class="num">' + G3.money(G3.sum(R.dps, "ulo")) + "</td></tr></tfoot></table></div></div>";
       }
       h += "</div>";
+      // Spending by MSC (from the funds export UIC + Units tab)
+      var mscR = (G3.data.hasUnits ? G3.unitRollup(fy, function (x) { return R.accts.indexOf(x.account) >= 0; }) : []).filter(function (o) { return o.total; }), mscT = G3.sum(mscR, "total");
+      if (mscR.length) {
+        h += '<div class="panel"><div class="tablehead"><h2>Spending by MSC</h2><span class="muted small">Obligations + disbursements from the funds export, rolled up from UIC through the unit hierarchy</span></div>' +
+          '<div class="tablewrap"><table class="grid unit"><thead><tr><th>MSC</th><th class="num">Obligations</th><th class="num">Disbursements</th><th class="num">Total</th><th class="num">Share</th></tr></thead><tbody>' +
+          mscR.map(function (o) { var sh = mscT ? o.total / mscT : 0; return "<tr><td><strong>" + G3.esc(o.name) + "</strong>" + (o.uic ? ' <span class="uic">' + G3.esc(o.uic) + "</span>" : "") + '</td><td class="num">' + G3.whole(o.oblig) + '</td><td class="num">' + G3.whole(o.disb) + '</td><td class="num"><strong>' + G3.whole(o.total) + '</strong></td><td class="num"><span class="xbar"><i style="width:' + (sh * 100).toFixed(0) + "%;background:" + c.color + '"></i></span>' + G3.pct(sh, 0) + "</td></tr>"; }).join("") +
+          '</tbody><tfoot><tr><td>Program total</td><td class="num">' + G3.whole(G3.sum(mscR, "oblig")) + '</td><td class="num">' + G3.whole(G3.sum(mscR, "disb")) + '</td><td class="num">' + G3.whole(mscT) + '</td><td class="num">100%</td></tr></tfoot></table></div></div>';
+      }
       // DPC detail
       if (!noDpc && R.dps.length) {
         var dl = R.dps.filter(function (d) { return !ui.tdc || d.tdc === ui.tdc; }), dsum = G3.sum(dl, "total");
